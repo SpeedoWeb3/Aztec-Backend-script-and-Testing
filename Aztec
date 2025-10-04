@@ -324,6 +324,13 @@ show_running_docker_containers() {
   echo -e "${AMBER}────────────────────────────────────────────${RESET}"
   echo ""
 
+  # Ensure port checking tools exist
+  if ! command -v ss &>/dev/null && ! command -v netstat &>/dev/null; then
+    echo -e "${AMBER}Installing missing network tools (net-tools)...${RESET}"
+    sudo apt-get update -y >/dev/null 2>&1
+    sudo apt-get install -y net-tools >/dev/null 2>&1
+  fi
+
   CONTAINERS=$(sudo docker ps -q)
 
   if [ -z "$CONTAINERS" ]; then
@@ -333,11 +340,22 @@ show_running_docker_containers() {
       NAME=$(sudo docker inspect -f '{{.Name}}' "$ID" | sed 's|/||')
       IMAGE=$(sudo docker inspect -f '{{.Config.Image}}' "$ID")
       STATUS=$(sudo docker inspect -f '{{.State.Status}}' "$ID")
+      NETWORK_MODE=$(sudo docker inspect -f '{{.HostConfig.NetworkMode}}' "$ID")
       PORTS=$(sudo docker port "$ID" 2>/dev/null | paste -sd ", " -)
+
+      # Fallback for host network (e.g. aztec-sequencer)
+      if [ "$NETWORK_MODE" = "host" ] && [ -z "$PORTS" ]; then
+        if command -v ss &>/dev/null; then
+          PORTS=$(sudo ss -tulnp 2>/dev/null | grep -E "40400|8080" | awk '{print $5}' | cut -d':' -f2 | sort -u | paste -sd ", " -)
+        elif command -v netstat &>/dev/null; then
+          PORTS=$(sudo netstat -tulnp 2>/dev/null | grep -E "40400|8080" | awk '{print $4}' | cut -d':' -f2 | sort -u | paste -sd ", " -)
+        fi
+      fi
 
       echo -e "${WHITE}Docker Name${AMBER}  :${RESET} ${ORANGE}$NAME${RESET}"
       echo -e "${WHITE}Image${AMBER}        :${RESET} ${ORANGE}$IMAGE${RESET}"
       echo -e "${WHITE}Status${AMBER}       :${RESET} ${ORANGE}${STATUS^}${RESET}"
+      echo -e "${WHITE}Network${AMBER}      :${RESET} ${ORANGE}$NETWORK_MODE${RESET}"
 
       if [ -n "$PORTS" ]; then
         echo -e "${WHITE}Ports${AMBER}        :${RESET} ${ORANGE}$PORTS${RESET}"
