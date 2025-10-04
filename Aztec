@@ -294,6 +294,84 @@ show_running_docker_containers() {
   echo ""
 }
 
+# ───[ DOZZLE MANAGER: INSTALL / SHOW / DELETE ]───
+launch_dozzle() {
+  while true; do
+    clear
+    echo "───────────────────────────────────────────────"
+    echo "🪩 DOZZLE (Docker Log Viewer) MANAGER"
+    echo "───────────────────────────────────────────────"
+    echo "1) Install Dozzle"
+    echo "2) Show Existing Dozzle"
+    echo "3) Delete Dozzle"
+    echo "4) Back to Main Menu"
+    echo "───────────────────────────────────────────────"
+    read -p "Choose an option (1-4): " dozzle_choice
+
+    case $dozzle_choice in
+      1)
+        echo "🚀 Installing & Launching Dozzle..."
+        sudo docker pull amir20/dozzle:latest >/dev/null 2>&1
+
+        # Stop old Dozzle container if running
+        if sudo docker ps -a --format '{{.Names}}' | grep -q '^dozzle$'; then
+          echo "⚙️ Removing old Dozzle container..."
+          sudo docker stop dozzle >/dev/null 2>&1
+          sudo docker rm dozzle >/dev/null 2>&1
+        fi
+
+        # Run new container
+        sudo docker run -d --name dozzle --restart unless-stopped \
+          -v /var/run/docker.sock:/var/run/docker.sock \
+          -p 9999:8080 amir20/dozzle:latest >/dev/null 2>&1
+
+        # Firewall rules
+        sudo ufw allow 9999 >/dev/null 2>&1
+        sudo ufw reload >/dev/null 2>&1
+
+        VPS_IP=$(curl -s ipv4.icanhazip.com)
+        echo "✅ Dozzle installed & running!"
+        echo "🌐 Open in browser: http://$VPS_IP:9999"
+        echo "🔎 Search 'aztec-sequencer' to view node logs."
+        read -p "Press Enter to continue..."
+        ;;
+
+      2)
+        echo "🔎 Checking Dozzle status..."
+        if sudo docker ps --format '{{.Names}}' | grep -q '^dozzle$'; then
+          VPS_IP=$(curl -s ipv4.icanhazip.com)
+          echo "✅ Dozzle is running!"
+          echo "🌐 Access it at: http://$VPS_IP:9999"
+          echo "🔎 Search 'aztec-sequencer' inside Dozzle to view logs."
+        else
+          echo "❌ Dozzle is not running."
+        fi
+        read -p "Press Enter to continue..."
+        ;;
+
+      3)
+        echo "⚠️ This will delete the Dozzle container completely."
+        read -p "Are you sure? (Y/n): " confirm
+        if [[ "$confirm" =~ ^[Yy]$ || -z "$confirm" ]]; then
+          sudo docker stop dozzle >/dev/null 2>&1
+          sudo docker rm dozzle >/dev/null 2>&1
+          echo "✅ Dozzle container deleted."
+        else
+          echo "❌ Cancelled."
+        fi
+        read -p "Press Enter to continue..."
+        ;;
+
+      4)
+        break
+        ;;
+      *)
+        echo "Invalid choice. Try again."
+        sleep 1
+        ;;
+    esac
+  done
+}
 # ──────────────[ MAIN MENU ]──────────────
 while true; do
   show_header
