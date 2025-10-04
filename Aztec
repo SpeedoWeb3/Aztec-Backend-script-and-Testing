@@ -162,7 +162,7 @@ check_rpc_health() {
     echo -e "${CYAN}3) Back to Main Menu${NC}"
     echo -e "${CYAN}───────────────────────────────────────────────${NC}"
     echo ""
-    read -p "$(echo -e "${CYAN}Choose option [1-3]: ${NC}")" rpc_option
+    read -p "$(echo -e "${CYAN}Choose option (1-3): ${NC}")" rpc_option
     case $rpc_option in
       1)
         if [ -f "$HOME/aztec/.env" ]; then
