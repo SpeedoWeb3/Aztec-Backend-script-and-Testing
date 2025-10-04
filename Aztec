@@ -324,7 +324,7 @@ show_running_docker_containers() {
   echo -e "${AMBER}────────────────────────────────────────────${RESET}"
   echo ""
 
-  # Ensure netstat or ss available
+  # Ensure netstat or ss is available
   if ! command -v netstat >/dev/null 2>&1 && ! command -v ss >/dev/null 2>&1; then
     echo -e "${AMBER}Installing missing network tools (net-tools)...${RESET}"
     sudo apt-get update -y >/dev/null 2>&1
@@ -350,20 +350,20 @@ show_running_docker_containers() {
       PORTS=$(sudo docker port "$ID" 2>/dev/null)
 
       if [ -n "$PORTS" ]; then
-        # Normal container with mapped ports
+        # Only show ports 40400 or 8080 if they exist
         echo -e "${WHITE}Ports${AMBER}        :${RESET}"
-        echo "$PORTS" | awk '!seen[$0]++ {print "  \033[1;33m"$0"\033[0m"}'
+        echo "$PORTS" | grep -E "40400|8080" | awk '!seen[$0]++ {print "  \033[1;33m"$0"\033[0m"}'
       else
-        # For host-mode or no mapped ports: detect only 40400 and 8080 (TCP/UDP)
+        # For host mode or no mapped ports
         echo -e "${WHITE}Ports${AMBER}        :${RESET}"
         if command -v netstat >/dev/null 2>&1; then
-          sudo netstat -tulnp 2>/dev/null | grep -E 'node|docker|aztec' | \
-          awk '/40400|8080/ && !/::/ {print $1" "$4}' | \
-          awk '!seen[$2" "$1]++ {print "  \033[1;33m"$2" ("tolower($1)")\033[0m"}'
+          sudo netstat -tulnp 2>/dev/null | \
+          grep -E "node|docker|$NAME" | grep -E "40400|8080" | grep -v ":::" | \
+          awk '!seen[$4" "$1]++ {print "  \033[1;33m"$4" ("tolower($1)")\033[0m"}'
         elif command -v ss >/dev/null 2>&1; then
-          sudo ss -tulnp 2>/dev/null | grep -E 'node|docker|aztec' | \
-          awk '/40400|8080/ && !/::/ {print $1" "$5}' | \
-          awk '!seen[$2" "$1]++ {print "  \033[1;33m"$2" ("tolower($1)")\033[0m"}'
+          sudo ss -tulnp 2>/dev/null | \
+          grep -E "node|docker|$NAME" | grep -E "40400|8080" | grep -v ":::" | \
+          awk '!seen[$5" "$1]++ {print "  \033[1;33m"$5" ("tolower($1)")\033[0m"}'
         else
           echo -e "  ${RED}No network info available${RESET}"
         fi
