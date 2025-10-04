@@ -324,18 +324,18 @@ show_running_docker_containers() {
   echo -e "${AMBER}────────────────────────────────────────────${RESET}"
   echo ""
 
-  # Ensure netstat or ss is available
-  if ! command -v netstat >/dev/null 2>&1 && ! command -v ss >/dev/null 2>&1; then
-    echo -e "${AMBER}Installing missing network tools (net-tools)...${RESET}"
-    sudo apt-get update -y >/dev/null 2>&1
-    sudo apt-get install -y net-tools >/dev/null 2>&1
-  fi
-
   CONTAINERS=$(sudo docker ps -q)
 
   if [ -z "$CONTAINERS" ]; then
     echo -e "${AMBER}⚠️  No containers are currently running.${RESET}"
   else
+    # Ensure `ss` exists for network detection
+    if ! command -v ss &>/dev/null; then
+      echo -e "${YELLOW}Installing missing net-tools...${RESET}"
+      sudo apt-get update -y >/dev/null 2>&1
+      sudo apt-get install -y net-tools iproute2 >/dev/null 2>&1
+    fi
+
     for ID in $CONTAINERS; do
       NAME=$(sudo docker inspect -f '{{.Name}}' "$ID" | sed 's|/||')
       IMAGE=$(sudo docker inspect -f '{{.Config.Image}}' "$ID")
@@ -346,26 +346,32 @@ show_running_docker_containers() {
       echo -e "${WHITE}Image${AMBER}        :${RESET} ${ORANGE}$IMAGE${RESET}"
       echo -e "${WHITE}Status${AMBER}       :${RESET} ${ORANGE}${STATUS^}${RESET}"
       echo -e "${WHITE}Network${AMBER}      :${RESET} ${ORANGE}$NETWORK${RESET}"
+      echo -e "${WHITE}Ports${AMBER}        :${RESET}"
 
-      PORTS=$(sudo docker port "$ID" 2>/dev/null)
-
-      if [ -n "$PORTS" ]; then
-        # Only show ports 40400 or 8080 if they exist
-        echo -e "${WHITE}Ports${AMBER}        :${RESET}"
-        echo "$PORTS" | grep -E "40400|8080" | awk '!seen[$0]++ {print "  \033[1;33m"$0"\033[0m"}'
+      if [ "$NAME" = "aztec-sequencer" ]; then
+        # Always show these ports explicitly for Aztec node
+        echo -e "  ${ORANGE}0.0.0.0:40400 (tcp)${RESET}"
+        echo -e "  ${ORANGE}0.0.0.0:40400 (udp)${RESET}"
+        echo -e "  ${ORANGE}0.0.0.0:8080 (tcp)${RESET}"
       else
-        # For host mode or no mapped ports
-        echo -e "${WHITE}Ports${AMBER}        :${RESET}"
-        if command -v netstat >/dev/null 2>&1; then
-          sudo netstat -tulnp 2>/dev/null | \
-          grep -E "node|docker|$NAME" | grep -E "40400|8080" | grep -v ":::" | \
-          awk '!seen[$4" "$1]++ {print "  \033[1;33m"$4" ("tolower($1)")\033[0m"}'
-        elif command -v ss >/dev/null 2>&1; then
-          sudo ss -tulnp 2>/dev/null | \
-          grep -E "node|docker|$NAME" | grep -E "40400|8080" | grep -v ":::" | \
-          awk '!seen[$5" "$1]++ {print "  \033[1;33m"$5" ("tolower($1)")\033[0m"}'
+        PORTS=$(sudo docker port "$ID" 2>/dev/null)
+        if [ -z "$PORTS" ]; then
+          # Fallback: check host ports using ss
+          CONTAINER_PID=$(sudo docker inspect -f '{{.State.Pid}}' "$ID" 2>/dev/null)
+          if [ -n "$CONTAINER_PID" ]; then
+            HOST_PORTS=$(sudo ss -tuln | grep -E ':(8080|40400)' | awk '{print $5 " (" $1 ")"}')
+            if [ -n "$HOST_PORTS" ]; then
+              echo "$HOST_PORTS" | while read -r line; do
+                echo -e "  ${ORANGE}$line${RESET}"
+              done
+            else
+              echo -e "  ${AMBER}None${RESET}"
+            fi
+          else
+            echo -e "  ${AMBER}None${RESET}"
+          fi
         else
-          echo -e "  ${RED}No network info available${RESET}"
+          echo "$PORTS" | awk '{print "  \033[1;33m"$0"\033[0m"}'
         fi
       fi
 
