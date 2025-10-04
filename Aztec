@@ -151,35 +151,64 @@ EOF
 
 # ───[ RPC HEALTH CHECK ]───
 check_rpc_health() {
-  echo "--- RPC Health Check ---"
-  echo "1) Use RPCs from .env file"
-  echo "2) Enter custom Sepolia and Beacon RPC URLs"
-  read -p "Choose option (1/2): " rpc_option
+  while true; do
+    clear
+    echo -e "${CYAN}───────────────────────────────────────────────${NC}"
+    echo -e "${CYAN}--- RPC Health Check ---${NC}"
+    echo -e "${CYAN}───────────────────────────────────────────────${NC}"
+    echo ""
+    echo -e "${CYAN}1) Use RPCs from .env file${NC}"
+    echo -e "${CYAN}2) Enter custom Sepolia and Beacon RPC URLs${NC}"
+    echo -e "${CYAN}3) Back to Main Menu${NC}"
+    echo -e "${CYAN}───────────────────────────────────────────────${NC}"
+    echo ""
+    read -p "$(echo -e ${CYAN}Choose option (1-3): ${NC})" rpc_option
 
-  if [ "$rpc_option" = "1" ]; then
-    if [ -f "$HOME/aztec/.env" ]; then
-      source "$HOME/aztec/.env"
-      SEPOLIA_RPC=$ETHEREUM_RPC_URL
-      BEACON_RPC=$CONSENSUS_BEACON_URL
+    case $rpc_option in
+      1)
+        if [ -f "$HOME/aztec/.env" ]; then
+          source "$HOME/aztec/.env"
+          SEPOLIA_RPC=$ETHEREUM_RPC_URL
+          BEACON_RPC=$CONSENSUS_BEACON_URL
+        else
+          echo -e "${RED}⚠️ .env not found. Please run Full Install first.${NC}"
+          read -p "Press Enter to continue..."
+          continue
+        fi
+        ;;
+      2)
+        read -p "$(echo -e ${CYAN}➡ Enter Sepolia RPC URL: ${NC})" SEPOLIA_RPC
+        read -p "$(echo -e ${CYAN}➡ Enter Beacon RPC URL: ${NC})" BEACON_RPC
+        ;;
+      3)
+        break
+        ;;
+      *)
+        echo -e "${RED}Invalid option. Try again.${NC}"
+        sleep 1
+        continue
+        ;;
+    esac
+
+    echo ""
+    echo -e "${CYAN}🔎 Checking Sepolia RPC:${NC} $SEPOLIA_RPC"
+    if curl -s --max-time 5 "$SEPOLIA_RPC" >/dev/null 2>&1; then
+      echo -e "${GREEN}✅ Reachable${NC}"
     else
-      echo "⚠️ .env not found. Please run Full Install first."
-      return
+      echo -e "${RED}❌ Not reachable${NC}"
     fi
-  elif [ "$rpc_option" = "2" ]; then
-    read -p "➡ Enter Sepolia RPC URL: " SEPOLIA_RPC
-    read -p "➡ Enter Beacon RPC URL: " BEACON_RPC
-  else
-    echo "Invalid option."
-    return
-  fi
 
-  echo "🔎 Checking Sepolia RPC: $SEPOLIA_RPC"
-  curl -s --max-time 5 "$SEPOLIA_RPC" >/dev/null 2>&1 && echo "✅ Reachable" || echo "❌ Not reachable"
+    echo -e "${CYAN}🔎 Checking Beacon RPC:${NC} $BEACON_RPC"
+    if curl -s --max-time 5 "$BEACON_RPC" >/dev/null 2>&1; then
+      echo -e "${GREEN}✅ Reachable${NC}"
+    else
+      echo -e "${RED}❌ Not reachable${NC}"
+    fi
 
-  echo "🔎 Checking Beacon RPC: $BEACON_RPC"
-  curl -s --max-time 5 "$BEACON_RPC" >/dev/null 2>&1 && echo "✅ Reachable" || echo "❌ Not reachable"
+    echo ""
+    read -p "Press Enter to continue..."
+  done
 }
-
 # ───[ PORTS & PEER ID CHECK ]───
 check_ports_and_peerid() {
   echo "Checking important ports..."
