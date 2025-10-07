@@ -208,11 +208,7 @@ check_rpc_health() {
     read -p "Press Enter to continue..."
   done
 }
-# ───[ PORTS & PEER ID CHECK ]───
-7) 
-  bash <(curl -fsSL "https://raw.githubusercontent.com/SpeedoWeb3/Testing/refs/heads/main/Port_cheaker.sh")
-  read -p "Press Enter to continue..."
-  ;;
+
 # ───[ NODE PERFORMANCE DASHBOARD ]───
 check_node_performance() {
   clear
@@ -519,7 +515,7 @@ EOF
         echo "❌ Delete cancelled."
       fi
       ;;
-    7) check_ports_and_peerid ;;
+    7) bash <(curl -fsSL "https://raw.githubusercontent.com/SpeedoWeb3/Testing/refs/heads/main/Port_cheaker.sh") ;;
     8) sudo docker pull aztecprotocol/aztec:2.0.2 && (cd ~/aztec && sudo docker compose up -d) ;;
     9) sudo docker exec aztec-sequencer node /usr/src/yarn-project/aztec/dest/bin/index.js --version ;;
     10) check_node_performance ;;
