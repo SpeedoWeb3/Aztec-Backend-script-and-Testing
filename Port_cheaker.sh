@@ -148,44 +148,53 @@ check_peer_id() {
   echo -e "${AMBER}───────────────────────────────────────────────${NC}"
 }
 
-# ──────────────[ MAIN MENU ]──────────────
+#──────────────[ MAIN MENU ]──────────────
+
 main_menu() {
-  local choice=""
+local choice=""
 
-  while true; do
-    show_header
+while true; do
+show_header
 
-    echo -e "${AMBER}1) Check Ports${NC}"
-    echo -e "${AMBER}2) Check Peer ID${NC}"
-    echo -e "${AMBER}3) Back to Main Menu${NC}"
-    echo -e ""
-    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
-    echo -e ""
+echo -e "${AMBER}1) Check Ports${NC}"  
+echo -e "${AMBER}2) Check Peer ID${NC}"  
+echo -e "${AMBER}3) Back to Main Menu${NC}"  
+echo -e ""  
+echo -e "${BLUE}═══════════════════════════════════════════════${NC}"  
+echo -e ""  
+  
+printf "Select option (1-3): "  
+read -r choice  
+  
+case "${choice:-}" in  
+  1)  
+    check_ports  
+    echo -e ""  
+    printf "Press Enter to continue..."  
+    read -r  
+    ;;  
+  2)  
+    check_peer_id  
+    echo -e ""  
+    printf "Press Enter to continue..."  
+    read -r  
+    ;;  
+  3)  
+    echo -e ""  
+    echo -e "${GREEN}Returning to Main Menu...${NC}"  
+    echo -e ""  
+    break  
+    ;;  
+  *)  
+    echo -e "${RED}Invalid option. Please select 1, 2, or 3.${NC}"  
+    sleep 2  
+    ;;  
+esac
 
-    printf "Select option (1-3): "
-    read -r choice
-
-    case "${choice:-}" in
-      1)
-        check_ports
-        ;;
-      2)
-        check_peer_id
-        ;;
-      3)
-        echo -e ""
-        echo -e "${GREEN}Returning to Main Menu...${NC}"
-        echo -e ""
-        break
-        ;;
-      *)
-        echo -e "${RED}Invalid option. Please select 1, 2, or 3.${NC}"
-        sleep 2
-        ;;
-    esac
-  done
+done
 }
 
-# ──────────────[ SCRIPT START ]──────────────
+#──────────────[ SCRIPT START ]──────────────
+
 check_dependencies
 main_menu
