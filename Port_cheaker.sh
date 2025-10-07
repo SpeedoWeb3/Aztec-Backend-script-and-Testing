@@ -151,32 +151,26 @@ check_peer_id() {
 # ──────────────[ MAIN MENU ]──────────────
 main_menu() {
   local choice=""
-  
+
   while true; do
     show_header
-    
+
     echo -e "${AMBER}1) Check Ports${NC}"
     echo -e "${AMBER}2) Check Peer ID${NC}"
     echo -e "${AMBER}3) Back to Main Menu${NC}"
     echo -e ""
     echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
     echo -e ""
-    
+
     printf "Select option (1-3): "
     read -r choice
-    
+
     case "${choice:-}" in
       1)
         check_ports
-        echo -e ""
-        printf "Press Enter to continue..."
-        read -r
         ;;
       2)
         check_peer_id
-        echo -e ""
-        printf "Press Enter to continue..."
-        read -r
         ;;
       3)
         echo -e ""
