@@ -179,11 +179,10 @@ case "${choice:-}" in
     printf "Press Enter to continue..."  
     read -r  
     ;;  
-  3)  
-    echo -e ""  
-    echo -e "${GREEN}Returning to Main Menu...${NC}"  
-    echo -e ""  
-    break  
+   
+  3) 
+    return  # if sourced from parent script
+    # or use `exit 0` if executed normally
     ;;  
   *)  
     echo -e "${RED}Invalid option. Please select 1, 2, or 3.${NC}"  
