@@ -17,7 +17,6 @@ show_header() {
   echo "              X:@SpeedoWeb3 || Discord:@SpeedoWeb3"
   echo -e "===============================================================${NC}"
 }
-
 # ───[ FULL INSTALLATION ]───
 install_aztec_node() {
   echo -e "${CYAN}Starting Full Aztec Node Installation...${NC}"
