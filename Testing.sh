@@ -377,19 +377,18 @@ check_node_performance() {
   fi
 
   # Docker stats
-  echo ""
-  echo -e "${CYAN}🐳 Docker Container Usage:${NC}"
-  if command -v docker &>/dev/null; then
-    sudo docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
-  else
-    echo -e "${YELLOW}Docker not installed.${NC}"
-  fi
+echo ""
+echo -e "${CYAN}🐳 Docker Container Usage:${NC}"
+if command -v docker &>/dev/null; then
+  sudo docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}"
+else
+  echo -e "${YELLOW}Docker not installed.${NC}"
+fi
 
-  echo ""
-  echo -e "${GREEN}✅ System performance looks good!${NC}"
-  echo -e "${CYAN}─────────────────────────────────────────────${NC}"
+echo ""
+echo -e "${GREEN}✅ Performance check complete!${NC}"
+echo -e "${CYAN}─────────────────────────────────────────────${NC}"
 }
-
 # ───[ PORT & PEER ID CHECK ]───
 check_ports_and_peerid() {
   clear
