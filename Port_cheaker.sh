@@ -111,29 +111,57 @@ check_peer_id() {
   CONTAINER_ID=""
   PEER_ID=""
   
-  # Get container ID dynamically
-  CONTAINER_ID=$(sudo docker ps -q --filter "ancestor=aztecprotocol/aztec" 2>/dev/null | head -n 1)
-  
-  # Fallback to container name
-  if [ -z "$CONTAINER_ID" ]; then
-    if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^aztec-sequencer$'; then
-      CONTAINER_ID="aztec-sequencer"
+  # Check if docker works without sudo
+  if docker ps >/dev/null 2>&1; then
+    # Docker works without sudo
+    CONTAINER_ID=$(docker ps -q --filter "ancestor=aztecprotocol/aztec:latest" 2>/dev/null | head -n 1)
+    
+    # Fallback to container name
+    if [ -z "$CONTAINER_ID" ]; then
+      if docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^aztec-sequencer$'; then
+        CONTAINER_ID="aztec-sequencer"
+      fi
     fi
-  fi
-  
-  if [ -z "$CONTAINER_ID" ]; then
-    echo -e "${RED}❌ No Aztec container running${NC}"
-    echo -e ""
-    echo -e "${AMBER}───────────────────────────────────────────────${NC}"
-    return
-  fi
-  
-  # Get peer ID using the requested command
-  PEER_ID=$(sudo docker logs "$CONTAINER_ID" 2>&1 | grep -i "peerId" | grep -o '"peerId":"[^"]*"' | cut -d'"' -f4 | head -n 1)
-  
-  # Fallback method
-  if [ -z "$PEER_ID" ]; then
-    PEER_ID=$(sudo docker logs "$CONTAINER_ID" 2>&1 | grep -o '16Uiu2[A-Za-z0-9]*' | head -n 1)
+    
+    if [ -z "$CONTAINER_ID" ]; then
+      echo -e "${RED}❌ No Aztec container running${NC}"
+      echo -e ""
+      echo -e "${AMBER}───────────────────────────────────────────────${NC}"
+      return
+    fi
+    
+    # Get peer ID without sudo
+    PEER_ID=$(docker logs "$CONTAINER_ID" 2>&1 | grep -i "peerId" | grep -o '"peerId":"[^"]*"' | cut -d'"' -f4 | head -n 1)
+    
+    # Fallback method
+    if [ -z "$PEER_ID" ]; then
+      PEER_ID=$(docker logs "$CONTAINER_ID" 2>&1 | grep -o '16Uiu2[A-Za-z0-9]*' | head -n 1)
+    fi
+  else
+    # Docker needs sudo
+    CONTAINER_ID=$(sudo docker ps -q --filter "ancestor=aztecprotocol/aztec:latest" 2>/dev/null | head -n 1)
+    
+    # Fallback to container name
+    if [ -z "$CONTAINER_ID" ]; then
+      if sudo docker ps --format '{{.Names}}' 2>/dev/null | grep -q '^aztec-sequencer$'; then
+        CONTAINER_ID="aztec-sequencer"
+      fi
+    fi
+    
+    if [ -z "$CONTAINER_ID" ]; then
+      echo -e "${RED}❌ No Aztec container running${NC}"
+      echo -e ""
+      echo -e "${AMBER}───────────────────────────────────────────────${NC}"
+      return
+    fi
+    
+    # Get peer ID with sudo
+    PEER_ID=$(sudo docker logs "$CONTAINER_ID" 2>&1 | grep -i "peerId" | grep -o '"peerId":"[^"]*"' | cut -d'"' -f4 | head -n 1)
+    
+    # Fallback method
+    if [ -z "$PEER_ID" ]; then
+      PEER_ID=$(sudo docker logs "$CONTAINER_ID" 2>&1 | grep -o '16Uiu2[A-Za-z0-9]*' | head -n 1)
+    fi
   fi
   
   if [ -n "$PEER_ID" ]; then
@@ -148,52 +176,48 @@ check_peer_id() {
   echo -e "${AMBER}───────────────────────────────────────────────${NC}"
 }
 
-#──────────────[ MAIN MENU ]──────────────
-
+# ──────────────[ MAIN MENU ]──────────────
 main_menu() {
-local choice=""
-
-while true; do
-show_header
-
-echo -e "${AMBER}1) Check Ports${NC}"  
-echo -e "${AMBER}2) Check Peer ID${NC}"  
-echo -e "${AMBER}3) Back to Main Menu${NC}"  
-echo -e ""  
-echo -e "${BLUE}═══════════════════════════════════════════════${NC}"  
-echo -e ""  
+  local choice=""
   
-printf "Select option (1-3): "  
-read -r choice  
-  
-case "${choice:-}" in  
-  1)  
-    check_ports  
-    echo -e ""  
-    printf "Press Enter to continue..."  
-    read -r  
-    ;;  
-  2)  
-    check_peer_id  
-    echo -e ""  
-    printf "Press Enter to continue..."  
-    read -r  
-    ;;  
-   
-  3) 
-    return  # if sourced from parent script
-    # or use `exit 0` if executed normally
-    ;;  
-  *)  
-    echo -e "${RED}Invalid option. Please select 1, 2, or 3.${NC}"  
-    sleep 2  
-    ;;  
-esac
-
-done
+  while true; do
+    show_header
+    
+    echo -e "${AMBER}1) Check Ports${NC}"
+    echo -e "${AMBER}2) Check Peer ID${NC}"
+    echo -e "${AMBER}3) Exit${NC}"
+    echo -e ""
+    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
+    echo -e ""
+    
+    printf "Select option (1-3): "
+    read -r choice
+    
+    case "${choice:-}" in
+      1)
+        check_ports
+        echo -e ""
+        printf "Press Enter to continue..."
+        read -r
+        ;;
+      2)
+        check_peer_id
+        echo -e ""
+        printf "Press Enter to continue..."
+        read -r
+        ;;
+      3)
+        echo -e "${GREEN}Exiting...${NC}"
+        exit 0
+        ;;
+      *)
+        echo -e "${RED}Invalid option. Please select 1, 2, or 3.${NC}"
+        sleep 2
+        ;;
+    esac
+  done
 }
 
-#──────────────[ SCRIPT START ]──────────────
-
+# ──────────────[ SCRIPT START ]──────────────
 check_dependencies
 main_menu
