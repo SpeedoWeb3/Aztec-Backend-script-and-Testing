@@ -248,39 +248,6 @@ EOF
 check_rpc_health() {
   bash <(curl -fsSL "https://raw.githubusercontent.com/SpeedoWeb3/Testing/refs/heads/main/check_rpc_health")
 }
-      2)
-        read -p "$(echo -e ${CYAN}➡ Enter Sepolia RPC URL: ${NC})" SEPOLIA_RPC
-        read -p "$(echo -e ${CYAN}➡ Enter Beacon RPC URL: ${NC})" BEACON_RPC
-        ;;
-      3)
-        break
-        ;;
-      *)
-        echo -e "${RED}Invalid option. Try again.${NC}"
-        sleep 1
-        continue
-        ;;
-    esac
-
-    echo ""
-    echo -e "${CYAN}🔎 Checking Sepolia RPC:${NC} $SEPOLIA_RPC"
-    if curl -s --max-time 5 "$SEPOLIA_RPC" >/dev/null 2>&1; then
-      echo -e "${GREEN}✅ Reachable${NC}"
-    else
-      echo -e "${RED}❌ Not reachable${NC}"
-    fi
-
-    echo -e "${CYAN}🔎 Checking Beacon RPC:${NC} $BEACON_RPC"
-    if curl -s --max-time 5 "$BEACON_RPC" >/dev/null 2>&1; then
-      echo -e "${GREEN}✅ Reachable${NC}"
-    else
-      echo -e "${RED}❌ Not reachable${NC}"
-    fi
-
-    echo ""
-    read -p "Press Enter to continue..."
-  done
-}
 
 # ───[ NODE PERFORMANCE DASHBOARD ]───
 check_node_performance() {
