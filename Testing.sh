@@ -558,14 +558,14 @@ launch_dozzle() {
 while true; do
   show_header
   echo ""
-  echo -e "${CYAN}1)  Full Install${NC}"
-  echo -e "${CYAN}2)  View Logs${NC}"
-  echo -e "${CYAN}3)  View & Reconfigure .env${NC}"
-  echo -e "${CYAN}4)  Check RPC Health${NC}"
-  echo -e "${CYAN}5)  Delete Node${NC}"
-  echo -e "${CYAN}6)  Check Ports & Peer ID${NC}"
-  echo -e "${CYAN}7)  Update Node${NC}"
-  echo -e "${CYAN}8)  Check Node Version${NC}"
+  echo -e "${CYAN}1) Full Install${NC}"
+  echo -e "${CYAN}2) View Logs${NC}"
+  echo -e "${CYAN}3) View & Reconfigure .env${NC}"
+  echo -e "${CYAN}4) Check RPC Health${NC}"
+  echo -e "${CYAN}5) Delete Node${NC}"
+  echo -e "${CYAN}6) Check Ports & Peer ID${NC}"
+  echo -e "${CYAN}7) Update Node${NC}"
+  echo -e "${CYAN}8) Check Node Version${NC}"
   echo -e "${CYAN}9) Check Node Performance${NC}"
   echo -e "${CYAN}10) Show Running Docker Containers${NC}"
   echo -e "${CYAN}11) Launch Dozzle (View Logs in Browser)${NC}"
@@ -577,7 +577,7 @@ while true; do
     1) 
       install_aztec_node 
       ;;
-
+      
     2) 
       cd ~/aztec && sudo docker compose logs -f 
       ;;
@@ -719,7 +719,7 @@ EOF
       launch_dozzle 
       ;;
       
-        12) 
+    12) 
       exit 0
       ;;
       
