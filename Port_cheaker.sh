@@ -195,7 +195,7 @@ main_menu() {
     
     echo -e "${AMBER}1) Check Ports${NC}"
     echo -e "${AMBER}2) Check Peer ID${NC}"
-    echo -e "${AMBER}3) Exit${NC}"
+    echo -e "${AMBER}3) Back to Main Menu${NC}"
     echo -e ""
     echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
     echo -e ""
@@ -206,15 +206,11 @@ main_menu() {
     case "${choice:-}" in
       1)
         check_ports
-        echo -e ""
-        printf "Press Enter to continue..."
-        read -r
+        sleep 5  # Auto-wait 5 seconds
         ;;
       2)
         check_peer_id
-        echo -e ""
-        printf "Press Enter to continue..."
-        read -r
+        sleep 5  # Auto-wait 5 seconds
         ;;
       3)
         clear
