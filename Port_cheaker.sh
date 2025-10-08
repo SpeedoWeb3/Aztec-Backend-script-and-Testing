@@ -195,7 +195,7 @@ main_menu() {
     
     echo -e "${AMBER}1) Check Ports${NC}"
     echo -e "${AMBER}2) Check Peer ID${NC}"
-    echo -e "${AMBER}3) Exit${NC}"
+    echo -e "${AMBER}3) Back to Main Menu${NC}"  # ← Changed text
     echo -e ""
     echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
     echo -e ""
@@ -217,8 +217,7 @@ main_menu() {
         read -r
         ;;
       3)
-        echo -e "${GREEN}Exiting...${NC}"
-        exit 0
+        exit 0  # ← REMOVED the echo line
         ;;
       *)
         echo -e "${RED}Invalid option. Please select 1, 2, or 3.${NC}"
