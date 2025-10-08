@@ -1,0 +1,204 @@
+#!/bin/bash
+set -u
+
+# ──────────────[ COLORS ]──────────────
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+WHITE='\033[1;37m'
+AMBER='\033[0;33m'
+PURPLE='\033[0;35m'
+NC='\033[0m'
+
+# ───[ RPC HEALTH CHECK WITH NINJA ANALYSIS ]───
+check_rpc_health() {
+  while true; do
+    clear
+    echo -e "${CYAN}───────────────────────────────────────────────${NC}"
+    echo -e "${CYAN}--- RPC Health Check ---${NC}"
+    echo -e "${CYAN}───────────────────────────────────────────────${NC}"
+    echo ""
+    echo -e "${AMBER}1) Use RPCs from .env file${NC}"
+    echo -e "${AMBER}2) Enter custom Sepolia and Beacon RPC URLs${NC}"
+    echo -e "${AMBER}3) Exit${NC}"
+    echo -e "${CYAN}───────────────────────────────────────────────${NC}"
+    echo ""
+    read -p "$(echo -e "${CYAN}Choose option (1-3): ${NC}")" rpc_option
+    
+    case $rpc_option in
+      1)
+        if [ -f "$HOME/aztec/.env" ]; then
+          source "$HOME/aztec/.env"
+          SEPOLIA_RPC=$ETHEREUM_RPC_URL
+          BEACON_RPC=$CONSENSUS_BEACON_URL
+        else
+          echo -e "${RED}⚠️ .env not found. Please run Full Install first.${NC}"
+          read -p "Press Enter to continue..."
+          continue
+        fi
+        ;;
+      2)
+        read -p "$(echo -e ${CYAN}➡ Enter Sepolia RPC URL: ${NC})" SEPOLIA_RPC
+        read -p "$(echo -e ${CYAN}➡ Enter Beacon RPC URL: ${NC})" BEACON_RPC
+        ;;
+      3)
+        exit 0
+        ;;
+      *)
+        echo -e "${RED}Invalid option. Try again.${NC}"
+        sleep 1
+        continue
+        ;;
+    esac
+
+    # Perform full ninja analysis
+    clear
+    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
+    echo -e "${BLUE}        🥷 NINJA NODE PERFORMANCE ANALYSIS${NC}"
+    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
+    
+    # Tools check
+    echo -e "${CYAN}● System Check${NC}"
+    TOOLS_COUNT=0
+    command -v curl &>/dev/null && ((TOOLS_COUNT++))
+    command -v jq &>/dev/null && ((TOOLS_COUNT++))
+    command -v bc &>/dev/null && ((TOOLS_COUNT++))
+    command -v date &>/dev/null && ((TOOLS_COUNT++))
+    echo -e "Tools: Found (${TOOLS_COUNT}/4) ${GREEN}✓${NC}"
+    
+    echo ""
+    echo -e "${CYAN}● RPC Endpoints${NC}"
+    [ -n "$SEPOLIA_RPC" ] && echo -e "Sepolia RPC Set ${GREEN}✓${NC}" || echo -e "Sepolia RPC ${RED}✗${NC}"
+    [ -n "$BEACON_RPC" ] && echo -e "Beacon RPC Set ${GREEN}✓${NC}" || echo -e "Beacon RPC ${RED}✗${NC}"
+    
+    # Sepolia deep check
+    echo ""
+    echo -e "${CYAN}● Sepolia RPC Analysis${NC}"
+    BLOCK_RESPONSE=$(curl -s --max-time 5 -X POST "$SEPOLIA_RPC" \
+      -H "Content-Type: application/json" \
+      -d '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' 2>/dev/null)
+    
+    SEPOLIA_OK=false
+    if echo "$BLOCK_RESPONSE" | grep -q "result"; then
+      BLOCK_HEX=$(echo "$BLOCK_RESPONSE" | grep -o '"result":"[^"]*"' | cut -d'"' -f4)
+      BLOCK_NUM=$((16#${BLOCK_HEX#0x}))
+      echo -e "${GREEN}✓${NC} Healthy (Block: ${WHITE}$BLOCK_NUM${NC})"
+      SEPOLIA_OK=true
+      
+      # Check network
+      NET_RESPONSE=$(curl -s --max-time 5 -X POST "$SEPOLIA_RPC" \
+        -H "Content-Type: application/json" \
+        -d '{"jsonrpc":"2.0","method":"net_version","params":[],"id":1}' 2>/dev/null)
+      NET_ID=$(echo "$NET_RESPONSE" | grep -o '"result":"[^"]*"' | cut -d'"' -f4)
+      if [ "$NET_ID" = "11155111" ]; then
+        echo -e "${GREEN}✓${NC} Network: Sepolia (${WHITE}11155111${NC})"
+      fi
+    else
+      echo -e "${RED}✗${NC} Unreachable"
+    fi
+    
+    # Beacon deep check
+    echo ""
+    echo -e "${CYAN}● Beacon Node Analysis${NC}"
+    BEACON_OK=false
+    VERSION_RESPONSE=$(curl -s --max-time 5 "$BEACON_RPC/eth/v1/node/version" 2>/dev/null)
+    if [ -n "$VERSION_RESPONSE" ]; then
+      VERSION=$(echo "$VERSION_RESPONSE" | grep -o '"version":"[^"]*"' | cut -d'"' -f4)
+      echo -e "${GREEN}✓${NC} Reachable (Version: ${WHITE}$VERSION${NC})"
+      BEACON_OK=true
+    else
+      echo -e "${RED}✗${NC} Unreachable"
+    fi
+    
+    # Blob sidecars check
+    echo ""
+    echo -e "${CYAN}● Blob Sidecars Check (Last 10 Slots)${NC}"
+    
+    # Get current slot
+    HEAD_RESPONSE=$(curl -s --max-time 5 "$BEACON_RPC/eth/v2/beacon/blocks/head" 2>/dev/null)
+    CURRENT_SLOT=$(echo "$HEAD_RESPONSE" | grep -o '"slot":"[^"]*"' | head -1 | cut -d'"' -f4)
+    
+    BLOB_SUCCESS=0
+    BLOB_FAIL=0
+    TOTAL_BLOBS=0
+    
+    if [ -n "$CURRENT_SLOT" ]; then
+      for i in {0..9}; do
+        SLOT=$((CURRENT_SLOT - i))
+        BLOB_RESPONSE=$(curl -s --max-time 2 "$BEACON_RPC/eth/v1/beacon/blob_sidecars/$SLOT" 2>/dev/null)
+        
+        if echo "$BLOB_RESPONSE" | grep -q "data"; then
+          BLOB_COUNT=$(echo "$BLOB_RESPONSE" | grep -o '"blob"' | wc -l)
+          if [ "$BLOB_COUNT" -gt 0 ]; then
+            echo -e "${GREEN}✓${NC} Slot ${WHITE}$SLOT${NC}: Fetch success, ${WHITE}$BLOB_COUNT${NC} blob(s)"
+            ((BLOB_SUCCESS++))
+            ((TOTAL_BLOBS+=BLOB_COUNT))
+          else
+            echo -e "${YELLOW}✗${NC} Slot ${WHITE}$SLOT${NC}: No blobs"
+            ((BLOB_FAIL++))
+          fi
+        else
+          echo -e "${RED}✗${NC} Slot ${WHITE}$SLOT${NC}: Fetch failed"
+          ((BLOB_FAIL++))
+        fi
+      done
+      
+      BLOB_PERCENTAGE=$((BLOB_SUCCESS * 100 / 10))
+    else
+      BLOB_PERCENTAGE=0
+      echo -e "${RED}✗${NC} Could not fetch current slot"
+    fi
+    
+    # Determine verdict based on RPC health and blob health
+    if [ "$SEPOLIA_OK" = true ] && [ "$BEACON_OK" = true ] && [ "$BLOB_PERCENTAGE" -ge 80 ]; then
+      VERDICT="${GREEN}Excellent – Premium RPC Quality${NC}"
+    elif [ "$SEPOLIA_OK" = true ] && [ "$BEACON_OK" = true ] && [ "$BLOB_PERCENTAGE" -ge 50 ]; then
+      VERDICT="${BLUE}Good – Professional RPC Quality${NC}"
+    elif [ "$SEPOLIA_OK" = true ] && [ "$BEACON_OK" = true ]; then
+      VERDICT="${YELLOW}Fair – Standard RPC Quality${NC}"
+    else
+      VERDICT="${RED}Poor – RPC Issues Detected${NC}"
+    fi
+    
+    # Summary
+    echo ""
+    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
+    echo -e "${BLUE}                  📊 SUMMARY${NC}"
+    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
+    
+    if [ "$SEPOLIA_OK" = true ]; then
+      echo -e "Sepolia RPC    : ${GREEN}OK${NC}"
+    else
+      echo -e "Sepolia RPC    : ${RED}FAILED${NC}"
+    fi
+    
+    if [ "$BEACON_OK" = true ]; then
+      echo -e "Beacon RPC     : ${GREEN}OK${NC}"
+    else
+      echo -e "Beacon RPC     : ${RED}FAILED${NC}"
+    fi
+    
+    if [ "$BLOB_PERCENTAGE" -ge 80 ]; then
+      echo -e "Blob Health    : ${GREEN}HEALTHY${NC}"
+    elif [ "$BLOB_PERCENTAGE" -ge 50 ]; then
+      echo -e "Blob Health    : ${YELLOW}MODERATE${NC}"
+    else
+      echo -e "Blob Health    : ${RED}POOR${NC}"
+    fi
+    
+    echo -e "Blob Success   : ${WHITE}${BLOB_SUCCESS}/10${NC} slots (${WHITE}${BLOB_PERCENTAGE}%${NC})"
+    echo -e "Total Blobs    : ${WHITE}${TOTAL_BLOBS}${NC}"
+    echo -e "Blob Errors    : ${WHITE}${BLOB_FAIL}/10${NC}"
+    
+    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
+    echo -e "Verdict : $VERDICT"
+    echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
+    
+    read -p "Press Enter to continue..."
+  done
+}
+
+# ───[ START SCRIPT ]───
+check_rpc_health
