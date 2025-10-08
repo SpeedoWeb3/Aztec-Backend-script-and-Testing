@@ -76,15 +76,25 @@ check_ports() {
   if command -v ufw &>/dev/null; then
     UFW_STATUS=$(sudo ufw status 2>/dev/null || echo "")
     if echo "$UFW_STATUS" | grep -q "Status: active"; then
-      printf "Port 40400: "
-      if echo "$UFW_STATUS" | grep -q "40400"; then
+      # Check 40400 TCP
+      printf "Port 40400/tcp: "
+      if echo "$UFW_STATUS" | grep -qE "40400/tcp|^40400 .*ALLOW"; then
         echo -e "${GREEN}✅ Allowed${NC}"
       else
         echo -e "${RED}❌ Not Allowed${NC}"
       fi
       
-      printf "Port 8080:  "
-      if echo "$UFW_STATUS" | grep -q "8080"; then
+      # Check 40400 UDP
+      printf "Port 40400/udp: "
+      if echo "$UFW_STATUS" | grep -qE "40400/udp|^40400 .*ALLOW"; then
+        echo -e "${GREEN}✅ Allowed${NC}"
+      else
+        echo -e "${RED}❌ Not Allowed${NC}"
+      fi
+      
+      # Check 8080
+      printf "Port 8080:      "
+      if echo "$UFW_STATUS" | grep -qE "8080|^8080 .*ALLOW"; then
         echo -e "${GREEN}✅ Allowed${NC}"
       else
         echo -e "${RED}❌ Not Allowed${NC}"
