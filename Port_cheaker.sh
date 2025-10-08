@@ -195,7 +195,7 @@ main_menu() {
     
     echo -e "${AMBER}1) Check Ports${NC}"
     echo -e "${AMBER}2) Check Peer ID${NC}"
-    echo -e "${AMBER}3) Back to Main Menu${NC}"
+    echo -e "${AMBER}3) Exit${NC}"
     echo -e ""
     echo -e "${BLUE}═══════════════════════════════════════════════${NC}"
     echo -e ""
@@ -217,7 +217,8 @@ main_menu() {
         read -r
         ;;
       3)
-        exit 0  # ← ONLY THIS CHANGED - removed clear and echo
+        clear
+        exit 0
         ;;
       *)
         echo -e "${RED}Invalid option. Please select 1, 2, or 3.${NC}"
@@ -226,3 +227,7 @@ main_menu() {
     esac
   done
 }
+
+# ──────────────[ SCRIPT START ]──────────────
+check_dependencies
+main_menu
