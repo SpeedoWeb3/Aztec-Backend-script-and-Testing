@@ -246,30 +246,8 @@ EOF
 
 # ───[ RPC HEALTH CHECK ]───
 check_rpc_health() {
-  while true; do
-    clear
-    echo -e "${CYAN}───────────────────────────────────────────────${NC}"
-    echo -e "${CYAN}--- RPC Health Check ---${NC}"
-    echo -e "${CYAN}───────────────────────────────────────────────${NC}"
-    echo ""
-    echo -e "${CYAN}1) Use RPCs from .env file${NC}"
-    echo -e "${CYAN}2) Enter custom Sepolia and Beacon RPC URLs${NC}"
-    echo -e "${CYAN}3) Back to Main Menu${NC}"
-    echo -e "${CYAN}───────────────────────────────────────────────${NC}"
-    echo ""
-    read -p "$(echo -e "${CYAN}Choose option (1-3): ${NC}")" rpc_option
-    case $rpc_option in
-      1)
-        if [ -f "$HOME/aztec/.env" ]; then
-          source "$HOME/aztec/.env"
-          SEPOLIA_RPC=$ETHEREUM_RPC_URL
-          BEACON_RPC=$CONSENSUS_BEACON_URL
-        else
-          echo -e "${RED}⚠️ .env not found. Please run Full Install first.${NC}"
-          read -p "Press Enter to continue..."
-          continue
-        fi
-        ;;
+  bash <(curl -fsSL "https://raw.githubusercontent.com/SpeedoWeb3/Testing/refs/heads/main/check_rpc_health")
+}
       2)
         read -p "$(echo -e ${CYAN}➡ Enter Sepolia RPC URL: ${NC})" SEPOLIA_RPC
         read -p "$(echo -e ${CYAN}➡ Enter Beacon RPC URL: ${NC})" BEACON_RPC
