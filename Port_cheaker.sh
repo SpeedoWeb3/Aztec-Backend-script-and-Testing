@@ -217,7 +217,7 @@ main_menu() {
         read -r
         ;;
       3)
-        echo -e "${GREEN}Exiting...${NC}"
+        clear
         exit 0
         ;;
       *)
