@@ -206,15 +206,18 @@ main_menu() {
     case "${choice:-}" in
       1)
         check_ports
-        sleep 5  # Auto-wait 5 seconds
+        echo -e ""
+        printf "Press Enter to continue..."
+        read -r
         ;;
       2)
         check_peer_id
-        sleep 5  # Auto-wait 5 seconds
+        echo -e ""
+        printf "Press Enter to continue..."
+        read -r
         ;;
       3)
-        clear
-        exit 0
+        exit 0  # ← ONLY THIS CHANGED - removed clear and echo
         ;;
       *)
         echo -e "${RED}Invalid option. Please select 1, 2, or 3.${NC}"
@@ -223,7 +226,3 @@ main_menu() {
     esac
   done
 }
-
-# ──────────────[ SCRIPT START ]──────────────
-check_dependencies
-main_menu
