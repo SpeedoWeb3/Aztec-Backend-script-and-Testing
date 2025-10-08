@@ -6,6 +6,9 @@ CYAN='\033[0;36m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 GREEN='\033[0;32m'
+AMBER='\033[0;33m'     
+WHITE='\033[1;37m'     
+BLUE='\033[0;34m'      
 NC='\033[0m'
 
 # ──────────────[ HEADER ]──────────────
@@ -16,6 +19,19 @@ show_header() {
   echo "               Script made by SpeedoWeb3 with ♥️"
   echo "              X:@SpeedoWeb3 || Discord:@SpeedoWeb3"
   echo -e "===============================================================${NC}"
+}
+      
+  echo -e "${GREEN}║  ✅ Installation Complete! 🚀        ║${NC}"
+  echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
+  echo ""
+  echo -e "${CYAN}📝 Important Notes:${NC}"
+  echo "   • Log out and log back in for Docker permissions"
+  echo "   • Or run: ${YELLOW}newgrp docker${NC}"
+  echo ""
+  echo -e "${CYAN}📊 Next Steps:${NC}"
+  echo "   • Use option 3 to view logs"
+  echo "   • Use option 7 to check ports & peer ID"
+  echo ""
 }
 # ───[ FULL INSTALLATION ]───
 install_aztec_node() {
@@ -35,57 +51,15 @@ install_aztec_node() {
     tar clang bsdmainutils ncdu unzip ufw screen gawk netcat-openbsd sysstat ifstat
   echo -e "${GREEN}✅ Prerequisites installed${NC}"
 
-  # Step 4: Docker setup with permission check
+  # Step 4: Docker check (FIXED - no reinstall question)
   if [ ! -f /etc/os-release ]; then
     echo "Not Ubuntu or Debian"
     exit 1
   fi
 
-  # Check if Docker is already installed
-  if command -v docker &> /dev/null; then
-    echo -e "${YELLOW}⚠️  Docker is already installed!${NC}"
-    docker --version
-    read -p "➡ Do you want to remove and reinstall Docker? (y/N): " docker_reinstall
-    
-    if [[ "$docker_reinstall" =~ ^[Yy]$ ]]; then
-      echo -e "${CYAN}Removing existing Docker installation...${NC}"
-      
-      # Remove all Docker packages
-      for pkg in docker.io docker-doc docker-compose podman-docker containerd runc docker-ce docker-ce-cli docker-buildx-plugin docker-compose-plugin; do
-        sudo apt-get remove --purge -y $pkg 2>/dev/null || true
-      done
-      sudo apt-get autoremove -y
-      sudo rm -rf /var/lib/docker /var/lib/containerd /etc/docker /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg
-      echo -e "${GREEN}✅ Old Docker removed${NC}"
-      
-      # Install fresh Docker
-      echo -e "${CYAN}Installing Docker...${NC}"
-      sudo apt-get update
-      sudo apt-get install -y ca-certificates curl gnupg lsb-release
-      sudo install -m 0755 -d /etc/apt/keyrings
-      . /etc/os-release
-      repo_url="https://download.docker.com/linux/$ID"
-      curl -fsSL "$repo_url/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-      sudo chmod a+r /etc/apt/keyrings/docker.gpg
-      echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] $repo_url $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-        sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-      sudo apt update -y && sudo apt upgrade -y
-      sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-      
-      # Test Docker installation
-      if sudo docker run hello-world &>/dev/null; then
-        sudo docker rm $(sudo docker ps -a --filter "ancestor=hello-world" --format "{{.ID}}") --force 2>/dev/null || true
-        sudo docker image rm hello-world 2>/dev/null || true
-      fi
-      
-      sudo systemctl enable docker
-      sudo systemctl restart docker
-      echo -e "${GREEN}✅ Docker installed successfully${NC}"
-    else
-      echo -e "${YELLOW}⏭️  Skipping Docker installation${NC}"
-    fi
-  else
-    # Docker not installed - install normally without asking
+  # Check if Docker is installed
+  if ! command -v docker &> /dev/null; then
+    # Docker NOT installed - install it
     echo -e "${CYAN}Docker not found. Installing Docker...${NC}"
     
     sudo apt-get update
@@ -109,38 +83,74 @@ install_aztec_node() {
     sudo systemctl enable docker
     sudo systemctl restart docker
     echo -e "${GREEN}✅ Docker installed successfully${NC}"
+  else
+    # Docker IS installed - just skip, no questions
+    echo -e "${GREEN}✅ Docker already installed: $(docker --version)${NC}"
   fi
 
   # Add user to docker group
   sudo usermod -aG docker $USER
 
-  # Step 5: Check for existing Aztec setup
+  # Step 5: Check for ONLY Aztec containers/images
   echo -e "${CYAN}Checking for existing Aztec setup...${NC}"
+  
+  # Find ONLY Aztec containers (by image)
   AZTEC_CONTAINERS=$(sudo docker ps -aq --filter ancestor=aztecprotocol/aztec 2>/dev/null)
-  AZTEC_NAMED_CONTAINERS=$(sudo docker ps -aq --filter "name=aztec" 2>/dev/null)
-  AZTEC_IMAGES=$(sudo docker images aztecprotocol/aztec -q 2>/dev/null)
+  
+  # Find ONLY containers with "aztec" in name
+  AZTEC_NAMED=$(sudo docker ps -a --format "{{.ID}} {{.Names}}" 2>/dev/null | grep -i "aztec" | awk '{print $1}')
+  
+  # Find ONLY Aztec images
+  AZTEC_IMAGES=$(sudo docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" 2>/dev/null | grep "aztecprotocol/aztec" | awk '{print $2}')
 
-  if [ -n "$AZTEC_CONTAINERS" ] || [ -n "$AZTEC_NAMED_CONTAINERS" ] || [ -n "$AZTEC_IMAGES" ]; then
-    echo -e "${YELLOW}⚠️  Existing Aztec Docker setup detected!${NC}"
-    read -p "➡ Do you want to delete and reinstall Aztec? (y/N): " del_choice
+  if [ -n "$AZTEC_CONTAINERS" ] || [ -n "$AZTEC_NAMED" ] || [ -n "$AZTEC_IMAGES" ]; then
+    echo -e "${YELLOW}⚠️  Existing Aztec setup detected!${NC}"
+    
+    # Show what will be deleted
+    echo ""
+    echo -e "${CYAN}The following will be removed:${NC}"
+    if [ -n "$AZTEC_CONTAINERS" ] || [ -n "$AZTEC_NAMED" ]; then
+      echo -e "${YELLOW}Containers:${NC}"
+      sudo docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null | grep -i "aztec"
+    fi
+    if [ -n "$AZTEC_IMAGES" ]; then
+      echo -e "${YELLOW}Images:${NC}"
+      sudo docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" 2>/dev/null | grep "aztecprotocol/aztec"
+    fi
+    echo ""
+    
+    read -p "➡ Remove ONLY Aztec containers/images? (y/N): " del_choice
     
     if [[ "$del_choice" =~ ^[Yy]$ ]]; then
-      # Stop and remove Aztec containers
-      if [ -n "$AZTEC_CONTAINERS" ] || [ -n "$AZTEC_NAMED_CONTAINERS" ]; then
-        echo "Stopping Aztec containers..."
-        sudo docker stop $AZTEC_CONTAINERS $AZTEC_NAMED_CONTAINERS 2>/dev/null || true
-        sudo docker rm $AZTEC_CONTAINERS $AZTEC_NAMED_CONTAINERS 2>/dev/null || true
+      # Stop and remove ONLY Aztec containers
+      if [ -n "$AZTEC_CONTAINERS" ]; then
+        echo "Stopping Aztec containers (by image)..."
+        echo "$AZTEC_CONTAINERS" | xargs -r sudo docker stop 2>/dev/null || true
+        echo "$AZTEC_CONTAINERS" | xargs -r sudo docker rm 2>/dev/null || true
       fi
       
-      # Remove Aztec images
+      if [ -n "$AZTEC_NAMED" ]; then
+        echo "Stopping Aztec containers (by name)..."
+        echo "$AZTEC_NAMED" | xargs -r sudo docker stop 2>/dev/null || true
+        echo "$AZTEC_NAMED" | xargs -r sudo docker rm 2>/dev/null || true
+      fi
+      
+      # Remove ONLY Aztec images
       if [ -n "$AZTEC_IMAGES" ]; then
-        echo "Removing Aztec images..."
-        sudo docker rmi -f $AZTEC_IMAGES 2>/dev/null || true
+        echo "Removing ONLY Aztec images..."
+        echo "$AZTEC_IMAGES" | xargs -r sudo docker rmi -f 2>/dev/null || true
       fi
       
-      # Clean Aztec files
-      rm -rf ~/aztec
-      echo -e "${GREEN}✅ Old Aztec setup removed${NC}"
+      # Clean ONLY Aztec data directory
+      if [ -d ~/aztec ]; then
+        rm -rf ~/aztec
+      fi
+      
+      if [ -d ~/.aztec ]; then
+        rm -rf ~/.aztec
+      fi
+      
+      echo -e "${GREEN}✅ ONLY Aztec setup removed (RPC and other containers untouched)${NC}"
     else
       echo -e "${RED}❌ Installation cancelled${NC}"
       return
@@ -160,7 +170,7 @@ install_aztec_node() {
   echo -e "${GREEN}✅ Firewall configured${NC}"
 
   # Step 7: Setup directory
-  rm -rf ~/aztec && mkdir ~/aztec && cd ~/aztec
+  mkdir -p ~/aztec && cd ~/aztec
 
   # Step 8: Get configuration with auto 0x prefix
   echo -e "${CYAN}Configuring your Aztec node...${NC}"
@@ -252,6 +262,7 @@ EOF
   echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
   echo ""
   echo -e "${CYAN}📝 Important Notes:${NC}"
+  echo "   • RPC and other Docker containers were NOT touched"
   echo "   • Log out and log back in for Docker permissions"
   echo "   • Or run: ${YELLOW}newgrp docker${NC}"
   echo ""
