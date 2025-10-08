@@ -6,9 +6,6 @@ CYAN='\033[0;36m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 GREEN='\033[0;32m'
-AMBER='\033[0;33m'     
-WHITE='\033[1;37m'     
-BLUE='\033[0;34m'      
 NC='\033[0m'
 
 # ──────────────[ HEADER ]──────────────
@@ -20,19 +17,7 @@ show_header() {
   echo "              X:@SpeedoWeb3 || Discord:@SpeedoWeb3"
   echo -e "===============================================================${NC}"
 }
-      
-  echo -e "${GREEN}║  ✅ Installation Complete! 🚀        ║${NC}"
-  echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
-  echo ""
-  echo -e "${CYAN}📝 Important Notes:${NC}"
-  echo "   • Log out and log back in for Docker permissions"
-  echo "   • Or run: ${YELLOW}newgrp docker${NC}"
-  echo ""
-  echo -e "${CYAN}📊 Next Steps:${NC}"
-  echo "   • Use option 3 to view logs"
-  echo "   • Use option 7 to check ports & peer ID"
-  echo ""
-}
+
 # ───[ FULL INSTALLATION ]───
 install_aztec_node() {
   echo -e "${CYAN}Starting Full Aztec Node Installation...${NC}"
@@ -41,181 +26,114 @@ install_aztec_node() {
   sudo sh -c 'echo "• Root Access Enabled ✔"'
 
   # Step 2: Update system
-  echo -e "${CYAN}Updating system...${NC}"
   sudo apt-get update && sudo apt-get upgrade -y
 
-  # Step 3: Install prerequisites
-  echo -e "${CYAN}Installing prerequisites...${NC}"
-  sudo apt install -y curl iptables build-essential git wget lz4 jq make gcc nano \
-    automake autoconf tmux htop nvme-cli libgbm1 pkg-config libssl-dev libleveldb-dev \
-    tar clang bsdmainutils ncdu unzip ufw screen gawk netcat-openbsd sysstat ifstat
-  echo -e "${GREEN}✅ Prerequisites installed${NC}"
+  # Step 3: Install prerequisites (includes sysstat and ifstat for network stats)
+  sudo apt install curl iptables build-essential git wget lz4 jq make gcc nano automake autoconf tmux htop nvme-cli libgbm1 pkg-config libssl-dev libleveldb-dev tar clang bsdmainutils ncdu unzip libleveldb-dev ufw screen gawk -y
 
-  # Step 4: Docker check (FIXED - no reinstall question)
+  # Step 4: Docker setup (safe cleanup only for Aztec)
   if [ ! -f /etc/os-release ]; then
     echo "Not Ubuntu or Debian"
     exit 1
   fi
 
-  # Check if Docker is installed
-  if ! command -v docker &> /dev/null; then
-    # Docker NOT installed - install it
-    echo -e "${CYAN}Docker not found. Installing Docker...${NC}"
-    
-    sudo apt-get update
-    sudo apt-get install -y ca-certificates curl gnupg lsb-release
-    sudo install -m 0755 -d /etc/apt/keyrings
-    . /etc/os-release
-    repo_url="https://download.docker.com/linux/$ID"
-    curl -fsSL "$repo_url/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-    sudo chmod a+r /etc/apt/keyrings/docker.gpg
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] $repo_url $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
-      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-    sudo apt update -y && sudo apt upgrade -y
-    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    
-    # Test Docker installation
-    if sudo docker run hello-world &>/dev/null; then
-      sudo docker rm $(sudo docker ps -a --filter "ancestor=hello-world" --format "{{.ID}}") --force 2>/dev/null || true
-      sudo docker image rm hello-world 2>/dev/null || true
-    fi
-    
-    sudo systemctl enable docker
-    sudo systemctl restart docker
-    echo -e "${GREEN}✅ Docker installed successfully${NC}"
-  else
-    # Docker IS installed - just skip, no questions
-    echo -e "${GREEN}✅ Docker already installed: $(docker --version)${NC}"
-  fi
+  echo -e "${CYAN}Checking for existing Aztec Docker containers/images...${NC}"
+  AZTEC_CONTAINERS=$(sudo docker ps -a --filter ancestor=aztecprotocol/aztec --format "{{.ID}}")
+  AZTEC_NAMED_CONTAINERS=$(sudo docker ps -a --filter "name=aztec" --format "{{.ID}}")
+  AZTEC_IMAGES=$(sudo docker images aztecprotocol/aztec -q)
 
-  # Add user to docker group
-  sudo usermod -aG docker $USER
-
-  # Step 5: Check for ONLY Aztec containers/images
-  echo -e "${CYAN}Checking for existing Aztec setup...${NC}"
-  
-  # Find ONLY Aztec containers (by image)
-  AZTEC_CONTAINERS=$(sudo docker ps -aq --filter ancestor=aztecprotocol/aztec 2>/dev/null)
-  
-  # Find ONLY containers with "aztec" in name
-  AZTEC_NAMED=$(sudo docker ps -a --format "{{.ID}} {{.Names}}" 2>/dev/null | grep -i "aztec" | awk '{print $1}')
-  
-  # Find ONLY Aztec images
-  AZTEC_IMAGES=$(sudo docker images --format "{{.Repository}}:{{.Tag}} {{.ID}}" 2>/dev/null | grep "aztecprotocol/aztec" | awk '{print $2}')
-
-  if [ -n "$AZTEC_CONTAINERS" ] || [ -n "$AZTEC_NAMED" ] || [ -n "$AZTEC_IMAGES" ]; then
-    echo -e "${YELLOW}⚠️  Existing Aztec setup detected!${NC}"
-    
-    # Show what will be deleted
-    echo ""
-    echo -e "${CYAN}The following will be removed:${NC}"
-    if [ -n "$AZTEC_CONTAINERS" ] || [ -n "$AZTEC_NAMED" ]; then
-      echo -e "${YELLOW}Containers:${NC}"
-      sudo docker ps -a --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null | grep -i "aztec"
-    fi
-    if [ -n "$AZTEC_IMAGES" ]; then
-      echo -e "${YELLOW}Images:${NC}"
-      sudo docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" 2>/dev/null | grep "aztecprotocol/aztec"
-    fi
-    echo ""
-    
-    read -p "➡ Remove ONLY Aztec containers/images? (y/N): " del_choice
-    
-    if [[ "$del_choice" =~ ^[Yy]$ ]]; then
-      # Stop and remove ONLY Aztec containers
-      if [ -n "$AZTEC_CONTAINERS" ]; then
-        echo "Stopping Aztec containers (by image)..."
-        echo "$AZTEC_CONTAINERS" | xargs -r sudo docker stop 2>/dev/null || true
-        echo "$AZTEC_CONTAINERS" | xargs -r sudo docker rm 2>/dev/null || true
-      fi
-      
-      if [ -n "$AZTEC_NAMED" ]; then
-        echo "Stopping Aztec containers (by name)..."
-        echo "$AZTEC_NAMED" | xargs -r sudo docker stop 2>/dev/null || true
-        echo "$AZTEC_NAMED" | xargs -r sudo docker rm 2>/dev/null || true
-      fi
-      
-      # Remove ONLY Aztec images
-      if [ -n "$AZTEC_IMAGES" ]; then
-        echo "Removing ONLY Aztec images..."
-        echo "$AZTEC_IMAGES" | xargs -r sudo docker rmi -f 2>/dev/null || true
-      fi
-      
-      # Clean ONLY Aztec data directory
-      if [ -d ~/aztec ]; then
-        rm -rf ~/aztec
-      fi
-      
-      if [ -d ~/.aztec ]; then
-        rm -rf ~/.aztec
-      fi
-      
-      echo -e "${GREEN}✅ ONLY Aztec setup removed (RPC and other containers untouched)${NC}"
-    else
-      echo -e "${RED}❌ Installation cancelled${NC}"
+  if [ -n "$AZTEC_CONTAINERS" ] || [ -n "$AZTEC_NAMED_CONTAINERS" ] || [ -n "$AZTEC_IMAGES" ]; then
+    echo -e "${RED}⚠️ Existing Aztec Docker setup detected!${NC}"
+    echo "Containers: ${AZTEC_CONTAINERS:-None} ${AZTEC_NAMED_CONTAINERS:-None}"
+    echo "Images: ${AZTEC_IMAGES:-None}"
+    read -p "➡ Do you want to delete and reinstall Aztec only? (Y/n): " del_choice
+    if [[ ! "$del_choice" =~ ^[Yy]$ && -n "$del_choice" ]]; then
+      echo "❌ Installation cancelled."
       return
     fi
+    # Stop and remove all containers found
+    if [ -n "$AZTEC_CONTAINERS" ] || [ -n "$AZTEC_NAMED_CONTAINERS" ]; then
+      echo "Stopping and removing Aztec containers..."
+      sudo docker stop $AZTEC_CONTAINERS $AZTEC_NAMED_CONTAINERS 2>/dev/null
+      sudo docker rm $AZTEC_CONTAINERS $AZTEC_NAMED_CONTAINERS 2>/dev/null
+    fi
+    # Remove Aztec images (force)
+    if [ -n "$AZTEC_IMAGES" ]; then
+      echo "Removing Aztec images..."
+      sudo docker rmi -f $AZTEC_IMAGES 2>/dev/null
+    fi
+    rm -f ~/aztec/docker-compose.yml ~/aztec/.env
+    echo "✅ Old Aztec Docker setup removed."
   fi
 
-  # Step 6: Firewall setup
-  echo -e "${CYAN}Configuring firewall...${NC}"
+  # Docker installation
+  #!/bin/bash
+set -e
+
+if [ ! -f /etc/os-release ]; then
+  echo "Not Ubuntu or Debian"
+  exit 1
+fi
+
+sudo apt update -y && sudo apt upgrade -y
+for pkg in docker.io docker-doc docker-compose podman-docker containerd runc docker-ce docker-ce-cli docker-buildx-plugin docker-compose-plugin; do
+  sudo apt-get remove --purge -y $pkg 2>/dev/null || true
+done
+sudo apt-get autoremove -y
+sudo rm -rf /var/lib/docker /var/lib/containerd /etc/docker /etc/apt/sources.list.d/docker.list /etc/apt/keyrings/docker.gpg
+
+sudo apt-get update
+sudo apt-get install -y ca-certificates curl gnupg lsb-release
+sudo install -m 0755 -d /etc/apt/keyrings
+
+. /etc/os-release
+repo_url="https://download.docker.com/linux/$ID"
+curl -fsSL "$repo_url/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] $repo_url $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt update -y && sudo apt upgrade -y
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+if sudo docker run hello-world; then
+  sudo docker rm $(sudo docker ps -a --filter "ancestor=hello-world" --format "{{.ID}}") --force 2>/dev/null || true
+  sudo docker image rm hello-world 2>/dev/null || true
+  sudo systemctl enable docker
+  sudo systemctl restart docker
+  clear
+  echo -e "\u2022 Docker Installed \u2714"
+fi
+docker
+  echo -e "${CYAN}• Docker Installed ✔${NC}"
+
+  # Fix Docker permission denied issue
+  sudo usermod -aG docker $USER
+  echo "✅ User added to docker group. Please log out and log back in (or run 'exec su - $USER') for changes to take effect."
+
+  # Step 5: Firewall
   sudo apt install -y ufw >/dev/null 2>&1
-  sudo ufw allow 22
+  sudo ufw --force enable
+  sudo ufw allow 22/tcp
   sudo ufw allow ssh
   sudo ufw allow 40400/tcp
   sudo ufw allow 40400/udp
   sudo ufw allow 8080
-  echo "y" | sudo ufw enable 2>/dev/null || sudo ufw --force enable
   sudo ufw reload
-  echo -e "${GREEN}✅ Firewall configured${NC}"
 
-  # Step 7: Setup directory
-  mkdir -p ~/aztec && cd ~/aztec
+  # Step 6: Setup directory
+  rm -rf ~/aztec && mkdir ~/aztec && cd ~/aztec
 
-  # Step 8: Get configuration with auto 0x prefix
-  echo -e "${CYAN}Configuring your Aztec node...${NC}"
-
-  VPS_IP=$(curl -s ipv4.icanhazip.com)
-  echo -e "${GREEN}➡ Auto-detected VPS IP: $VPS_IP${NC}"
-  echo ""
-
+  # Step 7: User config
+  echo -e "${CYAN}Let's configure your node...${NC}"
   read -p "➡ Enter Sepolia RPC URL: " ETH_RPC
   read -p "➡ Enter Beacon RPC URL: " BEACON_RPC
-  read -p "➡ Enter Validator Private Key: " VAL_PRIV_INPUT
-  read -p "➡ Enter Wallet Address: " WALLET_ADDR_INPUT
+  read -p "➡ Enter Validator Private Key (0x...): " VAL_PRIV
+  read -p "➡ Enter Wallet Address (0x...): " WALLET_ADDR
+  VPS_IP=$(curl -s ipv4.icanhazip.com)
+  echo "➡ Auto-detected VPS IP: $VPS_IP"
 
-  # Auto-add 0x prefix if not present
-  if [[ ! "$VAL_PRIV_INPUT" =~ ^0x ]]; then
-    VAL_PRIV="0x${VAL_PRIV_INPUT}"
-    echo -e "${YELLOW}ℹ️  Added '0x' prefix to private key${NC}"
-  else
-    VAL_PRIV="$VAL_PRIV_INPUT"
-  fi
-
-  if [[ ! "$WALLET_ADDR_INPUT" =~ ^0x ]]; then
-    WALLET_ADDR="0x${WALLET_ADDR_INPUT}"
-    echo -e "${YELLOW}ℹ️  Added '0x' prefix to wallet address${NC}"
-  else
-    WALLET_ADDR="$WALLET_ADDR_INPUT"
-  fi
-
-  # Show final values
-  echo ""
-  echo -e "${CYAN}Configuration Summary:${NC}"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo -e "${WHITE}VPS IP:${NC} $VPS_IP"
-  echo -e "${WHITE}Private Key:${NC} ${VAL_PRIV:0:10}...${VAL_PRIV: -4}"
-  echo -e "${WHITE}Wallet Address:${NC} $WALLET_ADDR"
-  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo ""
-
-  read -p "➡ Is this correct? (Y/n): " confirm
-  if [[ "$confirm" =~ ^[Nn]$ ]]; then
-    echo -e "${RED}❌ Configuration cancelled. Please restart installation.${NC}"
-    return
-  fi
-
-  # Create .env file
   cat > .env <<EOF
 ETHEREUM_RPC_URL=$ETH_RPC
 CONSENSUS_BEACON_URL=$BEACON_RPC
@@ -224,9 +142,9 @@ COINBASE=$WALLET_ADDR
 P2P_IP=$VPS_IP
 EOF
 
-  echo -e "${GREEN}✅ .env file created${NC}"
+  echo -e "${CYAN}.env file created successfully ✅${NC}"
 
-  # Step 9: Create docker-compose.yml
+  # Step 8: Create docker-compose.yml
   cat > docker-compose.yml <<'EOF'
 services:
   aztec-node:
@@ -252,25 +170,11 @@ services:
       - ${HOME}/.aztec/testnet/data/:/data
 EOF
 
-  # Step 10: Start node
-  echo -e "${CYAN}Starting Aztec node...${NC}"
+  # Step 9: Start node (NO SNAPSHOT RESTORE)
   sudo docker compose -f ~/aztec/docker-compose.yml up -d
-  
-  echo ""
-  echo -e "${GREEN}╔═══════════════════════════════════════╗${NC}"
-  echo -e "${GREEN}║  ✅ Installation Complete! 🚀        ║${NC}"
-  echo -e "${GREEN}╚═══════════════════════════════════════╝${NC}"
-  echo ""
-  echo -e "${CYAN}📝 Important Notes:${NC}"
-  echo "   • RPC and other Docker containers were NOT touched"
-  echo "   • Log out and log back in for Docker permissions"
-  echo "   • Or run: ${YELLOW}newgrp docker${NC}"
-  echo ""
-  echo -e "${CYAN}📊 Next Steps:${NC}"
-  echo "   • Use option 3 to view logs"
-  echo "   • Use option 7 to check ports & peer ID"
-  echo ""
+  echo -e "${CYAN}Installation finished 🚀 Use option 3 to view logs.${NC}"
 }
+
 # ───[ RPC HEALTH CHECK ]───
 check_rpc_health() {
   while true; do
