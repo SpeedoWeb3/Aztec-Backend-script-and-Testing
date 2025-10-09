@@ -6,7 +6,7 @@
 # Description: Complete management interface for Dozzle container
 # ═══════════════════════════════════════════════════════════════════════
 
-# ───[ COLOR DEFINITIONS ]───
+# COLOR DEFINITIONS
 CYAN='\033[0;36m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -19,14 +19,12 @@ NC='\033[0m'
 BOLD='\033[1m'
 DIM='\033[2m'
 
-# ───[ CONFIGURATION ]───
+# CONFIGURATION
 DOZZLE_PORT=${DOZZLE_PORT:-9999}
 DOZZLE_IMAGE="amir20/dozzle:latest"
 CONTAINER_NAME="dozzle"
 DOZZLE_VERSION="latest"
 LOG_FILE="/var/log/dozzle-manager.log"
-
-# ───[ HELPER FUNCTIONS ]───
 
 # Logging function
 log_message() {
@@ -143,10 +141,6 @@ spinner() {
     echo -ne "${NC}"
 }
 
-# ═══════════════════════════════════════════════════════════════════════
-# MAIN FUNCTIONS SECTION
-# ═══════════════════════════════════════════════════════════════════════
-
 install_update_dozzle() {
     echo -e "\n${CYAN}${BOLD}🚀 Install/Update Dozzle Docker Log Viewer${NC}"
     echo -e "${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
@@ -154,9 +148,11 @@ install_update_dozzle() {
     # Check if Dozzle is already running
     if $SUDO docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
         local vps_ip=$(get_public_ip)
-        echo -e "${GREEN}✅ Dozzle is already installed and running!${NC}\n"
+        echo -e "${GREEN}✅ Dozzle is already installed and running${NC}"
+        echo ""
         echo -e "${CYAN}Current Access URL:${NC} ${WHITE}http://$vps_ip:$DOZZLE_PORT${NC}"
-        echo -e "\n${YELLOW}💡 Redirecting to Status Information...${NC}"
+        echo ""
+        echo -e "${YELLOW}💡 Redirecting to Status Information...${NC}"
         sleep 2
         show_status_info
         return 0
@@ -170,7 +166,7 @@ install_update_dozzle() {
         
         if [ $? -eq 0 ]; then
             local vps_ip=$(get_public_ip)
-            echo -e "\n${GREEN}✅ Dozzle started successfully!${NC}"
+            echo -e "\n${GREEN}✅ Dozzle started successfully${NC}"
             echo -e "${CYAN}Access URL:${NC} ${WHITE}http://$vps_ip:$DOZZLE_PORT${NC}"
             sleep 2
             show_status_info
@@ -238,12 +234,8 @@ install_update_dozzle() {
         local total_containers=$($SUDO docker ps -a | wc -l)
         local running_containers=$($SUDO docker ps | wc -l)
         
-        echo -e "\n${GREEN}${BOLD}✅ Dozzle Successfully Installed!${NC}"
-        
+        echo -e "\n${GREEN}${BOLD}✅ Dozzle Successfully Installed${NC}"
         echo -e "${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        
-
-
         echo -e "${CYAN}📊 Access Information:${NC}"
         echo -e "  ${WHITE}• URL:${NC} ${YELLOW}http://$vps_ip:$DOZZLE_PORT${NC}"
         echo -e "  ${WHITE}• Container:${NC} ${WHITE}$CONTAINER_NAME${NC}"
@@ -386,10 +378,6 @@ delete_dozzle() {
     fi
 }
 
-# ═══════════════════════════════════════════════════════════════════════
-# MAIN MENU SECTION
-# ═══════════════════════════════════════════════════════════════════════
-
 main_menu() {
     while true; do
         clear
@@ -435,8 +423,8 @@ main_menu() {
                 read
                 ;;
             4)
-                echo -e "\n${CYAN}Thanks for using Dozzle Manager!${NC}"
-                echo -e "${WHITE}Goodbye! 👋${NC}\n"
+                echo -e "\n${CYAN}Thanks for using Dozzle Manager${NC}"
+                echo -e "${WHITE}Goodbye 👋${NC}\n"
                 exit 0
                 ;;
             *)
@@ -446,10 +434,6 @@ main_menu() {
         esac
     done
 }
-
-# ═══════════════════════════════════════════════════════════════════════
-# SCRIPT ENTRY POINT
-# ═══════════════════════════════════════════════════════════════════════
 
 main() {
     # Initial checks
