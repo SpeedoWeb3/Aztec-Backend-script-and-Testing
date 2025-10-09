@@ -143,7 +143,9 @@ spinner() {
     echo -ne "${NC}"
 }
 
-# Main Functions
+# ═══════════════════════════════════════════════════════════════════════
+# MAIN FUNCTIONS SECTION
+# ═══════════════════════════════════════════════════════════════════════
 
 install_update_dozzle() {
     echo -e "\n${CYAN}${BOLD}🚀 Install/Update Dozzle Docker Log Viewer${NC}"
@@ -237,6 +239,7 @@ install_update_dozzle() {
         local running_containers=$($SUDO docker ps | wc -l)
         
         echo -e "\n${GREEN}${BOLD}✅ Dozzle Successfully Installed!${NC}"
+        echo -e "${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo -e "${CYAN}📊 Access Information:${NC}"
         echo -e "  ${WHITE}• URL:${NC} ${YELLOW}http://$vps_ip:$DOZZLE_PORT${NC}"
         echo -e "  ${WHITE}• Container:${NC} ${WHITE}$CONTAINER_NAME${NC}"
@@ -379,7 +382,10 @@ delete_dozzle() {
     fi
 }
 
-# Main Menu
+# ═══════════════════════════════════════════════════════════════════════
+# MAIN MENU SECTION
+# ═══════════════════════════════════════════════════════════════════════
+
 main_menu() {
     while true; do
         clear
@@ -437,7 +443,10 @@ main_menu() {
     done
 }
 
-# Script Entry Point
+# ═══════════════════════════════════════════════════════════════════════
+# SCRIPT ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════════
+
 main() {
     # Initial checks
     check_privileges
