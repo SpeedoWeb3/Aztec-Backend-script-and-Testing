@@ -235,7 +235,7 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 echo -e "${CYAN}📊 Next Steps:${NC}"
 echo "   • Use option 2 to view logs"
-echo "   • Use option 7 to check ports & peer ID"
+echo "   • Use option 6 to check ports & peer ID"
 echo ""
 }
 
