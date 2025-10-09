@@ -237,7 +237,6 @@ install_update_dozzle() {
         local running_containers=$($SUDO docker ps | wc -l)
         
         echo -e "\n${GREEN}${BOLD}✅ Dozzle Successfully Installed!${NC}"
-        echo -e "${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         echo -e "${CYAN}📊 Access Information:${NC}"
         echo -e "  ${WHITE}• URL:${NC} ${YELLOW}http://$vps_ip:$DOZZLE_PORT${NC}"
         echo -e "  ${WHITE}• Container:${NC} ${WHITE}$CONTAINER_NAME${NC}"
