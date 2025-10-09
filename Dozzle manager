@@ -1,0 +1,456 @@
+#!/bin/bash
+
+# ═══════════════════════════════════════════════════════════════════════
+# DOZZLE MANAGER - Enhanced Docker Log Viewer Management Script
+# Version: 2.0
+# Description: Complete management interface for Dozzle container
+# ═══════════════════════════════════════════════════════════════════════
+
+# ───[ COLOR DEFINITIONS ]───
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+YELLOW='\033[1;33m'
+GREEN='\033[0;32m'
+BLUE='\033[0;34m'
+WHITE='\033[1;37m'
+AMBER='\033[0;33m'
+PURPLE='\033[0;35m'
+NC='\033[0m'
+BOLD='\033[1m'
+DIM='\033[2m'
+
+# ───[ CONFIGURATION ]───
+DOZZLE_PORT=${DOZZLE_PORT:-9999}
+DOZZLE_IMAGE="amir20/dozzle:latest"
+CONTAINER_NAME="dozzle"
+DOZZLE_VERSION="latest"
+LOG_FILE="/var/log/dozzle-manager.log"
+
+# ───[ HELPER FUNCTIONS ]───
+
+# Logging function
+log_message() {
+    local level=$1
+    shift
+    local message="$@"
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    echo "[$timestamp] [$level] $message" >> "$LOG_FILE" 2>/dev/null
+    
+    case $level in
+        ERROR)   echo -e "${RED}❌ $message${NC}" ;;
+        SUCCESS) echo -e "${GREEN}✅ $message${NC}" ;;
+        INFO)    echo -e "${CYAN}ℹ️  $message${NC}" ;;
+        WARNING) echo -e "${YELLOW}⚠️  $message${NC}" ;;
+        *)       echo -e "$message" ;;
+    esac
+}
+
+# Check if running as root or with sudo
+check_privileges() {
+    if [[ $EUID -ne 0 ]]; then
+        if ! command -v sudo &> /dev/null; then
+            log_message ERROR "This script requires root privileges. Please run with sudo."
+            exit 1
+        fi
+        SUDO="sudo"
+    else
+        SUDO=""
+    fi
+}
+
+# Check Docker installation
+check_docker() {
+    if ! command -v docker &> /dev/null; then
+        log_message ERROR "Docker is not installed. Please install Docker first."
+        echo -e "${YELLOW}Installation command:${NC}"
+        echo -e "${WHITE}curl -fsSL https://get.docker.com | sh${NC}"
+        exit 1
+    fi
+    
+    if ! $SUDO docker info &> /dev/null; then
+        log_message ERROR "Docker daemon is not running or you don't have permissions."
+        exit 1
+    fi
+}
+
+# Get public IP address with fallback methods
+get_public_ip() {
+    local ip=""
+    local services=("ipv4.icanhazip.com" "ifconfig.me" "api.ipify.org" "checkip.amazonaws.com")
+    
+    for service in "${services[@]}"; do
+        ip=$(curl -s --max-time 3 "$service" 2>/dev/null)
+        if [[ -n "$ip" && "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "$ip"
+            return 0
+        fi
+    done
+    
+    # Fallback to local IP
+    ip=$(hostname -I | awk '{print $1}')
+    echo "${ip:-localhost}"
+}
+
+# Check if port is available
+check_port() {
+    local port=$1
+    if $SUDO lsof -Pi :$port -sTCP:LISTEN -t >/dev/null 2>&1; then
+        return 1
+    fi
+    return 0
+}
+
+# Check firewall and configure
+configure_firewall() {
+    local port=$1
+    local action=$2
+    
+    # Check if ufw is installed and active
+    if command -v ufw &> /dev/null; then
+        if $SUDO ufw status | grep -q "Status: active"; then
+            if [[ "$action" == "open" ]]; then
+                $SUDO ufw allow $port/tcp >/dev/null 2>&1
+                $SUDO ufw reload >/dev/null 2>&1
+                log_message INFO "Firewall port $port opened"
+            elif [[ "$action" == "close" ]]; then
+                $SUDO ufw delete allow $port/tcp >/dev/null 2>&1
+                $SUDO ufw reload >/dev/null 2>&1
+                log_message INFO "Firewall port $port closed"
+            fi
+        fi
+    fi
+    
+    # Check for iptables
+    if command -v iptables &> /dev/null && [[ "$action" == "open" ]]; then
+        $SUDO iptables -I INPUT -p tcp --dport $port -j ACCEPT 2>/dev/null
+    fi
+}
+
+# Animated spinner
+spinner() {
+    local pid=$1
+    local delay=0.1
+    local spinstr='⣾⣽⣻⢿⡿⣟⣯⣷'
+    echo -ne "${CYAN}"
+    while [ "$(ps a | awk '{print $1}' | grep $pid)" ]; do
+        local temp=${spinstr#?}
+        printf " [%c]  " "$spinstr"
+        local spinstr=$temp${spinstr%"$temp"}
+        sleep $delay
+        printf "\b\b\b\b\b\b"
+    done
+    printf "    \b\b\b\b"
+    echo -ne "${NC}"
+}
+
+# Main Functions
+
+install_update_dozzle() {
+    echo -e "\n${CYAN}${BOLD}🚀 Install/Update Dozzle Docker Log Viewer${NC}"
+    echo -e "${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+    
+    # Check if Dozzle is already running
+    if $SUDO docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        local vps_ip=$(get_public_ip)
+        echo -e "${GREEN}✅ Dozzle is already installed and running!${NC}\n"
+        echo -e "${CYAN}Current Access URL:${NC} ${WHITE}http://$vps_ip:$DOZZLE_PORT${NC}"
+        echo -e "\n${YELLOW}💡 Redirecting to Status Information...${NC}"
+        sleep 2
+        show_status_info
+        return 0
+    fi
+    
+    # Check if container exists but stopped
+    if $SUDO docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        echo -e "${YELLOW}⚠️  Dozzle container exists but is stopped.${NC}"
+        echo -e "${CYAN}Starting existing container...${NC}"
+        $SUDO docker start $CONTAINER_NAME >/dev/null 2>&1
+        
+        if [ $? -eq 0 ]; then
+            local vps_ip=$(get_public_ip)
+            echo -e "\n${GREEN}✅ Dozzle started successfully!${NC}"
+            echo -e "${CYAN}Access URL:${NC} ${WHITE}http://$vps_ip:$DOZZLE_PORT${NC}"
+            sleep 2
+            show_status_info
+            return 0
+        else
+            echo -e "${RED}Failed to start existing container. Reinstalling...${NC}"
+            $SUDO docker rm $CONTAINER_NAME >/dev/null 2>&1
+        fi
+    fi
+    
+    # Fresh installation
+    echo -e "${CYAN}📦 Installing Dozzle...${NC}\n"
+    
+    # Check if port is available
+    if ! check_port $DOZZLE_PORT; then
+        log_message WARNING "Port $DOZZLE_PORT is already in use."
+        read -p "$(echo -e ${WHITE}Enter alternative port KATEX_INLINE_OPENdefault: 9998KATEX_INLINE_CLOSE: ${NC})" alt_port
+        DOZZLE_PORT=${alt_port:-9998}
+        
+        if ! check_port $DOZZLE_PORT; then
+            log_message ERROR "Port $DOZZLE_PORT is also in use. Aborting."
+            return 1
+        fi
+    fi
+    
+    # Check if image exists
+    if $SUDO docker images | grep -q "dozzle.*latest"; then
+        echo -e "${GREEN}✓${NC} Dozzle image already exists, skipping download"
+    else
+        echo -e "${CYAN}Downloading Dozzle image...${NC}"
+        (
+            $SUDO docker pull $DOZZLE_IMAGE 2>&1 | while read line; do
+                echo "$line" >> "$LOG_FILE"
+            done
+        ) &
+        spinner $!
+        echo -e "${GREEN}✓${NC} Image downloaded successfully"
+    fi
+    
+    # Run Dozzle container
+    echo -e "${CYAN}Starting Dozzle container...${NC}"
+    $SUDO docker run -d \
+        --name $CONTAINER_NAME \
+        --restart unless-stopped \
+        --memory="256m" \
+        --cpus="0.5" \
+        -v /var/run/docker.sock:/var/run/docker.sock:ro \
+        -p $DOZZLE_PORT:8080 \
+        -e DOZZLE_LEVEL=info \
+        -e DOZZLE_TAILSIZE=300 \
+        -e DOZZLE_FILTER="name=aztec*" \
+        --label "managed-by=dozzle-manager" \
+        --label "version=$DOZZLE_VERSION" \
+        $DOZZLE_IMAGE >/dev/null 2>&1
+    
+    if [ $? -eq 0 ]; then
+        # Configure firewall
+        configure_firewall $DOZZLE_PORT "open"
+        
+        # Get access information
+        local vps_ip=$(get_public_ip)
+        
+        # Get Docker info
+        local docker_version=$($SUDO docker version --format '{{.Server.Version}}' 2>/dev/null)
+        local total_containers=$($SUDO docker ps -a | wc -l)
+        local running_containers=$($SUDO docker ps | wc -l)
+        
+        echo -e "\n${GREEN}${BOLD}✅ Dozzle Successfully Installed!${NC}"
+        echo -e "${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "${CYAN}📊 Access Information:${NC}"
+        echo -e "  ${WHITE}• URL:${NC} ${YELLOW}http://$vps_ip:$DOZZLE_PORT${NC}"
+        echo -e "  ${WHITE}• Container:${NC} ${WHITE}$CONTAINER_NAME${NC}"
+        echo -e "  ${WHITE}• Status:${NC} ${GREEN}Running${NC}"
+        echo -e "  ${WHITE}• Resource Limits:${NC} ${WHITE}256MB RAM / 0.5 CPU${NC}"
+        echo -e "\n${YELLOW}📋 Docker Environment:${NC}"
+        echo -e "  ${WHITE}• Docker Version:${NC} ${WHITE}$docker_version${NC}"
+        echo -e "  ${WHITE}• Total Containers:${NC} ${WHITE}$((total_containers-1))${NC}"
+        echo -e "  ${WHITE}• Running:${NC} ${GREEN}$((running_containers-1))${NC}"
+        echo -e "  ${WHITE}• Dozzle monitors all containers in real-time${NC}"
+        
+        log_message SUCCESS "Dozzle installed successfully on port $DOZZLE_PORT"
+    else
+        log_message ERROR "Failed to start Dozzle container"
+        return 1
+    fi
+}
+
+show_status_info() {
+    echo -e "\n${CYAN}${BOLD}📊 Dozzle Status & Information${NC}"
+    echo -e "${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+    
+    if $SUDO docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+        local vps_ip=$(get_public_ip)
+        local container_info=$($SUDO docker inspect $CONTAINER_NAME 2>/dev/null)
+        local created=$(echo "$container_info" | grep -Po '"Created": "\K[^"]*' | head -1 | cut -d'T' -f1)
+        local status=$($SUDO docker ps --filter "name=$CONTAINER_NAME" --format "{{.Status}}")
+        local image=$($SUDO docker ps --filter "name=$CONTAINER_NAME" --format "{{.Image}}")
+        local ports=$($SUDO docker ps --filter "name=$CONTAINER_NAME" --format "{{.Ports}}")
+        
+        # Get container stats
+        local stats=$($SUDO docker stats $CONTAINER_NAME --no-stream --format "table {{.CPUPerc}}\t{{.MemUsage}}" | tail -1)
+        local cpu_usage=$(echo "$stats" | awk '{print $1}')
+        local mem_usage=$(echo "$stats" | awk '{print $2}')
+        
+        # Get Docker system info
+        local docker_version=$($SUDO docker version --format '{{.Server.Version}}' 2>/dev/null)
+        local total_containers=$($SUDO docker ps -a | wc -l)
+        local running_containers=$($SUDO docker ps | wc -l)
+        local docker_images=$($SUDO docker images | wc -l)
+        
+        echo -e "${GREEN}✅ Dozzle is Running${NC}\n"
+        
+        # Container Details Box
+        echo -e "${CYAN}┌─ Container Details ─────────────────────────┐${NC}"
+        echo -e "${CYAN}│${NC} ${WHITE}Name:${NC}     ${WHITE}$CONTAINER_NAME${NC}"
+        echo -e "${CYAN}│${NC} ${WHITE}Image:${NC}    ${WHITE}$image${NC}"
+        echo -e "${CYAN}│${NC} ${WHITE}Status:${NC}   ${GREEN}$status${NC}"
+        echo -e "${CYAN}│${NC} ${WHITE}Created:${NC}  ${WHITE}$created${NC}"
+        echo -e "${CYAN}│${NC} ${WHITE}Ports:${NC}    ${WHITE}$ports${NC}"
+        echo -e "${CYAN}└──────────────────────────────────────────────┘${NC}"
+        
+        # Resource Usage Box
+        echo -e "\n${PURPLE}┌─ Resource Usage ────────────────────────────┐${NC}"
+        echo -e "${PURPLE}│${NC} ${WHITE}CPU Usage:${NC}    ${YELLOW}$cpu_usage${NC}"
+        echo -e "${PURPLE}│${NC} ${WHITE}Memory Usage:${NC} ${YELLOW}$mem_usage${NC}"
+        echo -e "${PURPLE}└──────────────────────────────────────────────┘${NC}"
+        
+        # Access Information Box
+        echo -e "\n${BLUE}┌─ Access Information ────────────────────────┐${NC}"
+        echo -e "${BLUE}│${NC} ${WHITE}Public URL:${NC}  ${YELLOW}http://$vps_ip:$DOZZLE_PORT${NC}"
+        echo -e "${BLUE}│${NC} ${WHITE}Local URL:${NC}   ${WHITE}http://localhost:$DOZZLE_PORT${NC}"
+        echo -e "${BLUE}└──────────────────────────────────────────────┘${NC}"
+        
+        # Docker System Info
+        echo -e "\n${AMBER}┌─ Docker System Info ────────────────────────┐${NC}"
+        echo -e "${AMBER}│${NC} ${WHITE}Docker Version:${NC}    ${WHITE}$docker_version${NC}"
+        echo -e "${AMBER}│${NC} ${WHITE}Total Containers:${NC}  ${WHITE}$((total_containers-1))${NC}"
+        echo -e "${AMBER}│${NC} ${WHITE}Running:${NC}           ${GREEN}$((running_containers-1))${NC}"
+        echo -e "${AMBER}│${NC} ${WHITE}Total Images:${NC}      ${WHITE}$((docker_images-1))${NC}"
+        echo -e "${AMBER}│${NC} ${WHITE}Monitored by Dozzle:${NC} ${GREEN}All containers${NC}"
+        echo -e "${AMBER}└──────────────────────────────────────────────┘${NC}"
+        
+        # Check container logs for errors
+        local error_count=$($SUDO docker logs $CONTAINER_NAME 2>&1 | grep -i error | wc -l)
+        if [ $error_count -gt 0 ]; then
+            echo -e "\n${YELLOW}⚠️  Found $error_count error(s) in Dozzle logs${NC}"
+        fi
+        
+    else
+        echo -e "${RED}❌ Dozzle is Not Running${NC}"
+        echo -e "\n${YELLOW}💡 Suggestions:${NC}"
+        echo -e "  ${WHITE}• Use option 1 to install Dozzle${NC}"
+        echo -e "  ${WHITE}• Check Docker status:${NC} ${DIM}systemctl status docker${NC}"
+        
+        # Check if container exists but stopped
+        if $SUDO docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            echo -e "\n${CYAN}ℹ️  Container exists but is stopped${NC}"
+            echo -e "  ${WHITE}Use option 1 to restart it automatically${NC}"
+        fi
+    fi
+}
+
+delete_dozzle() {
+    echo -e "\n${RED}${BOLD}⚠️  Delete Dozzle Container${NC}"
+    echo -e "${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+    
+    echo -e "${YELLOW}This will permanently delete:${NC}"
+    echo -e "  ${WHITE}• Dozzle container${NC}"
+    echo -e "  ${WHITE}• Dozzle Docker image${NC}"
+    echo -e "  ${WHITE}• Firewall rules for port $DOZZLE_PORT${NC}"
+    
+    echo -e "\n${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    read -p "$(echo -e ${RED}${BOLD}Are you sure? [y/N]: ${NC})" confirm
+    
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        echo -e "\n${CYAN}🗑️  Removing Dozzle...${NC}\n"
+        
+        # Stop and remove container
+        if $SUDO docker ps -a --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            echo -ne "${WHITE}Stopping container...${NC}"
+            $SUDO docker stop $CONTAINER_NAME >/dev/null 2>&1
+            echo -e " ${GREEN}✓${NC}"
+            
+            echo -ne "${WHITE}Removing container...${NC}"
+            $SUDO docker rm $CONTAINER_NAME >/dev/null 2>&1
+            echo -e " ${GREEN}✓${NC}"
+        else
+            echo -e "${YELLOW}Container not found${NC}"
+        fi
+        
+        # Remove image
+        if $SUDO docker images | grep -q "dozzle"; then
+            echo -ne "${WHITE}Removing image...${NC}"
+            $SUDO docker rmi $DOZZLE_IMAGE >/dev/null 2>&1
+            echo -e " ${GREEN}✓${NC}"
+        else
+            echo -e "${YELLOW}Image not found${NC}"
+        fi
+        
+        # Close firewall port
+        echo -ne "${WHITE}Cleaning firewall rules...${NC}"
+        configure_firewall $DOZZLE_PORT "close"
+        echo -e " ${GREEN}✓${NC}"
+        
+        log_message SUCCESS "Dozzle completely removed"
+        echo -e "\n${GREEN}✅ Dozzle has been completely removed${NC}"
+    else
+        echo -e "\n${CYAN}❌ Deletion cancelled${NC}"
+    fi
+}
+
+# Main Menu
+main_menu() {
+    while true; do
+        clear
+        
+        # Header
+        echo -e "${CYAN}╔══════════════════════════════════════════════════════╗${NC}"
+        echo -e "${CYAN}║${NC}         ${WHITE}🪩  DOZZLE MANAGER${NC} ${CYAN}- ${WHITE}Docker Log Viewer${NC}      ${CYAN}║${NC}"
+        echo -e "${CYAN}╚══════════════════════════════════════════════════════╝${NC}"
+        echo -e "${WHITE}    Real-time Docker container log viewer in browser${NC}"
+        echo -e "${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
+        
+        # Quick status check
+        if $SUDO docker ps --format '{{.Names}}' | grep -q "^${CONTAINER_NAME}$"; then
+            local vps_ip=$(get_public_ip)
+            echo -e "${WHITE}Status:${NC} ${GREEN}● Running${NC}  ${CYAN}│${NC}  ${WHITE}Access:${NC} ${YELLOW}http://$vps_ip:$DOZZLE_PORT${NC}"
+        else
+            echo -e "${WHITE}Status:${NC} ${RED}● Not Running${NC}  ${CYAN}│${NC}  ${WHITE}Run option 1 to install${NC}"
+        fi
+        
+        echo -e "\n${PURPLE}═══════════════[ ${WHITE}MENU OPTIONS${NC} ${PURPLE}]═══════════════${NC}\n"
+        echo -e "  ${CYAN}[${WHITE}1${CYAN}]${NC} ${WHITE}🚀 Install/Update Dozzle${NC}"
+        echo -e "  ${CYAN}[${WHITE}2${CYAN}]${NC} ${WHITE}📊 Show Status & Information${NC}"
+        echo -e "  ${CYAN}[${WHITE}3${CYAN}]${NC} ${WHITE}🗑️  Delete Dozzle${NC}"
+        echo -e "  ${CYAN}[${WHITE}4${CYAN}]${NC} ${WHITE}🚪 Exit${NC}"
+        
+        echo -e "\n${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        read -p "$(echo -e ${CYAN}Select option [1-4]: ${NC})" choice
+        
+        case $choice in
+            1)
+                install_update_dozzle
+                echo -e "\n${WHITE}Press Enter to continue...${NC}"
+                read
+                ;;
+            2)
+                show_status_info
+                echo -e "\n${WHITE}Press Enter to continue...${NC}"
+                read
+                ;;
+            3)
+                delete_dozzle
+                echo -e "\n${WHITE}Press Enter to continue...${NC}"
+                read
+                ;;
+            4)
+                echo -e "\n${CYAN}Thanks for using Dozzle Manager!${NC}"
+                echo -e "${WHITE}Goodbye! 👋${NC}\n"
+                exit 0
+                ;;
+            *)
+                echo -e "\n${RED}Invalid option. Please choose between 1-4.${NC}"
+                sleep 2
+                ;;
+        esac
+    done
+}
+
+# Script Entry Point
+main() {
+    # Initial checks
+    check_privileges
+    check_docker
+    
+    # Create log file if it doesn't exist
+    $SUDO touch "$LOG_FILE" 2>/dev/null
+    $SUDO chmod 666 "$LOG_FILE" 2>/dev/null
+    
+    # Start main menu
+    main_menu
+}
+
+# Run the script
+main "$@"
