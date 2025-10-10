@@ -550,13 +550,24 @@ EOF
     7) 
   echo -e "${CYAN}Updating Aztec Node...${NC}"
   
-  [ "${PWD##*/}" != "aztec" ] && cd aztec
-  bash <(curl -Ls https://raw.githubusercontent.com/DeepPatel2412/Aztec-Tools/refs/heads/main/Aztec%20CLI%20Cleanup)
-  sed -i 's|^ *image: aztecprotocol/aztec:.*|    image: aztecprotocol/aztec:2.0.3|' docker-compose.yml
-  sed -i 's|alpha-testnet|testnet|g' docker-compose.yml
+  cd ~/aztec
+  
+  # Stop node
+  docker compose down
+  
+  # Update version in docker-compose.yml
+  sed -i 's|image: aztecprotocol/aztec:.*|image: aztecprotocol/aztec:2.0.3|' docker-compose.yml
+  
+  # Pull new image
+  docker pull aztecprotocol/aztec:2.0.3
+  
+  # Remove old Aztec images only
+  docker images aztecprotocol/aztec --format "{{.ID}} {{.Tag}}" | grep -v "2.0.3" | awk '{print $1}' | xargs -r docker rmi
+  
+  # Start with new version
   docker compose up -d
   
-  echo -e "${GREEN}✅ Node updated to v2.0.3!${NC}"
+  echo -e "${GREEN}✅ Node updated to v2.0.3${NC}"
   read -p "Press Enter to continue..."
   ;;
       
