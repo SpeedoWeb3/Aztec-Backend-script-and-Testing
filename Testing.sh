@@ -548,11 +548,17 @@ EOF
       ;;
       
     7) 
-      echo -e "${CYAN}Updating Aztec Node...${NC}"
-      sudo docker pull aztecprotocol/aztec:2.0.3
-      cd ~/aztec && sudo docker compose down && sudo docker compose up -d
-      echo -e "${GREEN}✅ Node updated and restarted!${NC}"
-      ;;
+  echo -e "${CYAN}Updating Aztec Node...${NC}"
+  
+  [ "${PWD##*/}" != "aztec" ] && cd aztec
+  bash <(curl -Ls https://raw.githubusercontent.com/DeepPatel2412/Aztec-Tools/refs/heads/main/Aztec%20CLI%20Cleanup)
+  sed -i 's|^ *image: aztecprotocol/aztec:.*|    image: aztecprotocol/aztec:2.0.3|' docker-compose.yml
+  sed -i 's|alpha-testnet|testnet|g' docker-compose.yml
+  docker compose up -d
+  
+  echo -e "${GREEN}✅ Node updated to v2.0.3!${NC}"
+  read -p "Press Enter to continue..."
+  ;;
       
     8) 
       echo -e "${CYAN}Checking Aztec Node Version...${NC}"
