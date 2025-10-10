@@ -512,13 +512,13 @@ EOF
   echo "   • ~/.aztec/testnet data"
   
   # Check for Aztec containers
-  AZTEC_CONTAINERS=$(sudo docker ps -a --format '{{.Names}}' | grep -E 'aztec|sequencer' | paste -sd ' ' -)
+  AZTEC_CONTAINERS=$(sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E 'aztec|sequencer' 2>/dev/null | paste -sd ' ' -)
   if [ ! -z "$AZTEC_CONTAINERS" ]; then
     echo "   • Docker containers: $AZTEC_CONTAINERS"
   fi
   
   # Check for Aztec images
-  AZTEC_IMAGES=$(sudo docker images --format '{{.Repository}}:{{.Tag}}' | grep aztec | paste -sd ' ' -)
+  AZTEC_IMAGES=$(sudo docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep aztec 2>/dev/null | paste -sd ' ' -)
   if [ ! -z "$AZTEC_IMAGES" ]; then
     echo "   • Docker images: $AZTEC_IMAGES"
   fi
@@ -534,33 +534,35 @@ EOF
     
     # Progress bar function
     show_progress() {
-      echo -ne "$1 ["
+      echo -ne "\r$1 ["
       for ((i=0; i<$2; i++)); do echo -ne "█"; done
       for ((i=$2; i<10; i++)); do echo -ne "░"; done
-      echo -ne "] ${3}%\r"
+      echo -ne "] ${3}%"
+      if [ "$3" == "100" ]; then
+        echo ""
+      fi
     }
     
     # Stop and remove containers
     show_progress "${CYAN}Stopping containers...${NC}" 2 20
-    sudo docker ps -a --format '{{.Names}}' | grep -E 'aztec|sequencer' | xargs -r sudo docker stop 2>/dev/null || true
+    sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E 'aztec|sequencer' 2>/dev/null | xargs -r sudo docker stop >/dev/null 2>&1 || true
     sleep 0.5
     
     show_progress "${CYAN}Removing containers...${NC}" 4 40
-    sudo docker ps -a --format '{{.Names}}' | grep -E 'aztec|sequencer' | xargs -r sudo docker rm 2>/dev/null || true
+    sudo docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E 'aztec|sequencer' 2>/dev/null | xargs -r sudo docker rm >/dev/null 2>&1 || true
     sleep 0.5
     
     # Remove images
     show_progress "${CYAN}Removing images...    ${NC}" 6 60
-    sudo docker images --format '{{.Repository}}:{{.Tag}}' | grep aztec | xargs -r sudo docker rmi 2>/dev/null || true
+    sudo docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep aztec 2>/dev/null | xargs -r sudo docker rmi -f >/dev/null 2>&1 || true
     sleep 0.5
     
     # Remove directories
     show_progress "${CYAN}Removing directories...${NC}" 8 80
-    rm -rf ~/aztec ~/.aztec/testnet 2>/dev/null || true
+    rm -rf ~/aztec ~/.aztec/testnet >/dev/null 2>&1 || true
     sleep 0.5
     
     show_progress "${CYAN}Cleaning up...        ${NC}" 10 100
-    echo ""
     echo ""
     
     echo -e "${GREEN}✅ Aztec Node completely deleted${NC}"
@@ -568,7 +570,6 @@ EOF
   else
     echo -e "${YELLOW}❌ Delete cancelled${NC}"
   fi
-  read -p "Press Enter to continue..."
   ;;
       
     6) 
