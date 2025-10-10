@@ -206,7 +206,7 @@ install_update_dozzle() {
         echo -e "${GREEN}✓${NC} Image downloaded successfully"
     fi
     
-    # Run Dozzle container
+    # Run Dozzle container WITHOUT filter to show ALL containers
     echo -e "${CYAN}Starting Dozzle container...${NC}"
     $SUDO docker run -d \
         --name $CONTAINER_NAME \
@@ -217,7 +217,6 @@ install_update_dozzle() {
         -p $DOZZLE_PORT:8080 \
         -e DOZZLE_LEVEL=info \
         -e DOZZLE_TAILSIZE=300 \
-        -e DOZZLE_FILTER="name=aztec*" \
         --label "managed-by=dozzle-manager" \
         --label "version=$DOZZLE_VERSION" \
         $DOZZLE_IMAGE >/dev/null 2>&1
@@ -245,7 +244,7 @@ install_update_dozzle() {
         echo -e "  ${WHITE}• Docker Version:${NC} ${WHITE}$docker_version${NC}"
         echo -e "  ${WHITE}• Total Containers:${NC} ${WHITE}$((total_containers-1))${NC}"
         echo -e "  ${WHITE}• Running:${NC} ${GREEN}$((running_containers-1))${NC}"
-        echo -e "  ${WHITE}• Dozzle monitors all containers in real-time${NC}"
+        echo -e "  ${WHITE}• Dozzle monitors ALL containers in real-time${NC}"
         
         log_message SUCCESS "Dozzle installed successfully on port $DOZZLE_PORT"
     else
@@ -306,7 +305,7 @@ show_status_info() {
         echo -e "${AMBER}│${NC} ${WHITE}Total Containers:${NC}  ${WHITE}$((total_containers-1))${NC}"
         echo -e "${AMBER}│${NC} ${WHITE}Running:${NC}           ${GREEN}$((running_containers-1))${NC}"
         echo -e "${AMBER}│${NC} ${WHITE}Total Images:${NC}      ${WHITE}$((docker_images-1))${NC}"
-        echo -e "${AMBER}│${NC} ${WHITE}Monitored by Dozzle:${NC} ${GREEN}All containers${NC}"
+        echo -e "${AMBER}│${NC} ${WHITE}Monitored by Dozzle:${NC} ${GREEN}ALL containers${NC}"
         echo -e "${AMBER}└──────────────────────────────────────────────┘${NC}"
         
         # Check container logs for errors
