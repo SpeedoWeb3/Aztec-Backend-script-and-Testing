@@ -549,7 +549,7 @@ EOF
       
     7) 
       echo -e "${CYAN}Updating Aztec Node...${NC}"
-      sudo docker pull aztecprotocol/aztec:2.0.2
+      sudo docker pull aztecprotocol/aztec:2.0.3
       cd ~/aztec && sudo docker compose down && sudo docker compose up -d
       echo -e "${GREEN}✅ Node updated and restarted!${NC}"
       ;;
