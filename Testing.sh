@@ -498,50 +498,78 @@ EOF
       ;;
       
     5)
-      echo ""
-      echo -e "${RED}╔═══════════════════════════════════════════╗${NC}"
-      echo -e "${RED}║    ⚠️  DELETE AZTEC NODE WARNING  ⚠️     ║${NC}"
-      echo -e "${RED}╚═══════════════════════════════════════════╝${NC}"
-      echo ""
-      echo -e "${YELLOW}This will delete ONLY your Aztec Node:${NC}"
-      echo "   • ~/aztec directory"
-      echo "   • ~/.aztec/testnet data"
-      echo "   • Docker container: aztec-sequencer"
-      echo "   • Docker image: aztecprotocol/aztec:2.0.2"
-      echo ""
-      echo -e "${GREEN}✅ RPC and other containers will NOT be touched!${NC}"
-      echo ""
-      read -p "➡ Are you sure? (y/N): " confirm1
-      
-      if [[ "$confirm1" =~ ^[Yy]$ ]]; then
-        echo ""
-        echo -e "${RED}⚠️  FINAL WARNING: This action cannot be undone!${NC}"
-        read -p "➡ Type 'DELETE' to confirm: " confirm2
-        
-        if [[ "$confirm2" == "DELETE" ]]; then
-          echo ""
-          echo -e "${CYAN}Stopping Aztec container...${NC}"
-          sudo docker stop aztec-sequencer 2>/dev/null || true
-          
-          echo -e "${CYAN}Removing Aztec container...${NC}"
-          sudo docker rm aztec-sequencer 2>/dev/null || true
-          
-          echo -e "${CYAN}Removing Aztec image...${NC}"
-          sudo docker rmi aztecprotocol/aztec:2.0.2 2>/dev/null || true
-          
-          echo -e "${CYAN}Removing Aztec directories...${NC}"
-          rm -rf ~/aztec ~/.aztec/testnet
-          
-          echo ""
-          echo -e "${GREEN}✅ Aztec Node completely deleted!${NC}"
-          echo -e "${GREEN}✅ Other Docker containers remain intact.${NC}"
-        else
-          echo -e "${RED}❌ Confirmation failed. Deletion cancelled.${NC}"
-        fi
-      else
-        echo -e "${YELLOW}❌ Delete cancelled.${NC}"
-      fi
-      ;;
+  echo ""
+  echo -e "${RED}╔═══════════════════════════════════════════╗${NC}"
+  echo -e "${RED}║    ⚠️  DELETE AZTEC NODE WARNING  ⚠️     ║${NC}"
+  echo -e "${RED}╚═══════════════════════════════════════════╝${NC}"
+  echo ""
+  
+  # Detect what will be deleted
+  echo -e "${YELLOW}Detecting Aztec components...${NC}"
+  echo ""
+  echo -e "${YELLOW}This will delete:${NC}"
+  echo "   • ~/aztec directory"
+  echo "   • ~/.aztec/testnet data"
+  
+  # Check for Aztec containers
+  AZTEC_CONTAINERS=$(sudo docker ps -a --format '{{.Names}}' | grep -E 'aztec|sequencer' | paste -sd ' ' -)
+  if [ ! -z "$AZTEC_CONTAINERS" ]; then
+    echo "   • Docker containers: $AZTEC_CONTAINERS"
+  fi
+  
+  # Check for Aztec images
+  AZTEC_IMAGES=$(sudo docker images --format '{{.Repository}}:{{.Tag}}' | grep aztec | paste -sd ' ' -)
+  if [ ! -z "$AZTEC_IMAGES" ]; then
+    echo "   • Docker images: $AZTEC_IMAGES"
+  fi
+  
+  echo ""
+  echo -e "${GREEN}✅ Other Docker containers will NOT be touched${NC}"
+  echo ""
+  echo -e "${RED}⚠️  This action cannot be undone${NC}"
+  read -p "➡ Are you sure? (y/N): " confirm
+  
+  if [[ "$confirm" =~ ^[Yy]$ ]]; then
+    echo ""
+    
+    # Progress bar function
+    show_progress() {
+      echo -ne "$1 ["
+      for ((i=0; i<$2; i++)); do echo -ne "█"; done
+      for ((i=$2; i<10; i++)); do echo -ne "░"; done
+      echo -ne "] ${3}%\r"
+    }
+    
+    # Stop and remove containers
+    show_progress "${CYAN}Stopping containers...${NC}" 2 20
+    sudo docker ps -a --format '{{.Names}}' | grep -E 'aztec|sequencer' | xargs -r sudo docker stop 2>/dev/null || true
+    sleep 0.5
+    
+    show_progress "${CYAN}Removing containers...${NC}" 4 40
+    sudo docker ps -a --format '{{.Names}}' | grep -E 'aztec|sequencer' | xargs -r sudo docker rm 2>/dev/null || true
+    sleep 0.5
+    
+    # Remove images
+    show_progress "${CYAN}Removing images...    ${NC}" 6 60
+    sudo docker images --format '{{.Repository}}:{{.Tag}}' | grep aztec | xargs -r sudo docker rmi 2>/dev/null || true
+    sleep 0.5
+    
+    # Remove directories
+    show_progress "${CYAN}Removing directories...${NC}" 8 80
+    rm -rf ~/aztec ~/.aztec/testnet 2>/dev/null || true
+    sleep 0.5
+    
+    show_progress "${CYAN}Cleaning up...        ${NC}" 10 100
+    echo ""
+    echo ""
+    
+    echo -e "${GREEN}✅ Aztec Node completely deleted${NC}"
+    echo -e "${GREEN}✅ Other Docker containers remain intact${NC}"
+  else
+    echo -e "${YELLOW}❌ Delete cancelled${NC}"
+  fi
+  read -p "Press Enter to continue..."
+  ;;
       
     6) 
       check_ports_and_peerid 
