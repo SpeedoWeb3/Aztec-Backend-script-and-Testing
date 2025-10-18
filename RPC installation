@@ -324,11 +324,10 @@ check_sync() {
                 echo -e "  ${WHITE}Current Block:${NC} $CURRENT_DEC"
                 echo -e "  ${WHITE}Target Block:${NC} $HIGHEST_DEC"
                 
-                # Estimate time
-                BLOCKS_LEFT=$((HIGHEST_DEC - CURRENT_DEC))
-                if [ $BLOCKS_LEFT -gt 0 ]; then
-                    HOURS_LEFT=$((BLOCKS_LEFT / 3000))
-                    echo -e "  ${WHITE}Estimated time:${NC} ${YELLOW}~${HOURS_LEFT} hours${NC}"
+                # Get ETA from Geth logs
+                ETA=$(docker logs geth --tail 20 2>&1 | grep -oP 'eta=\K[^ ]+' | tail -1)
+                if [ ! -z "$ETA" ]; then
+                    echo -e "  ${WHITE}Estimated time:${NC} ${YELLOW}${ETA}${NC}"
                 fi
             fi
         fi
