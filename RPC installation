@@ -231,14 +231,21 @@ EOF
     fi
     
     # Configure firewall
-    echo -ne "${CYAN}Configuring firewall...${NC}"
-    sudo ufw allow $GETH_PORT/tcp >/dev/null 2>&1
-    sudo ufw allow $WS_PORT/tcp >/dev/null 2>&1
-    sudo ufw allow $BEACON_PORT/tcp >/dev/null 2>&1
-    sudo ufw allow 30303/tcp >/dev/null 2>&1
-    sudo ufw allow 30303/udp >/dev/null 2>&1
-    sudo ufw allow 4000/tcp >/dev/null 2>&1
-    echo -e " ${GREEN}✓${NC}"
+echo -ne "${CYAN}Configuring firewall...${NC}"
+sudo ufw allow 22/tcp >/dev/null 2>&1              # SSH (prevent lockout)
+sudo ufw allow $GETH_PORT/tcp >/dev/null 2>&1
+sudo ufw allow $WS_PORT/tcp >/dev/null 2>&1
+sudo ufw allow $BEACON_PORT/tcp >/dev/null 2>&1
+sudo ufw allow 30303/tcp >/dev/null 2>&1
+sudo ufw allow 30303/udp >/dev/null 2>&1
+sudo ufw allow 4000/tcp >/dev/null 2>&1
+
+# Check if UFW is enabled, if not enable it
+if sudo ufw status 2>/dev/null | grep -q "Status: inactive"; then
+    sudo ufw --force enable >/dev/null 2>&1
+fi
+
+echo -e " ${GREEN}✓${NC}"
     
     # Get IP
     VPS_IP=$(get_public_ip)
