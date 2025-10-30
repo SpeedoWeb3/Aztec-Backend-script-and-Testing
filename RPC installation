@@ -373,8 +373,6 @@ check_sync() {
     if [ "$GETH_SYNCED" = true ] && [ "$BEACON_SYNCED" = true ]; then
         VPS_IP=$(get_public_ip)
         echo -e "${GREEN}✅ RPC is fully synced and ready to use${NC}"
-        echo -e "\n${CYAN}Your RPC URL for Aztec:${NC}"
-        echo -e "${YELLOW}http://$VPS_IP:$GETH_PORT${NC}"
     else
         echo -e "${YELLOW}⏳ RPC is still syncing. Please wait...${NC}"
     fi
@@ -400,12 +398,12 @@ view_rpc() {
     echo -e "${YELLOW}═══[ RPC & AZTEC ON SAME VPS ]═══${NC}"
     echo -e "${WHITE}Use these URLs in your Aztec configuration:${NC}"
     echo -e "  ${CYAN}• Sepolia RPC:${NC} ${GREEN}http://localhost:8545${NC}"
-    echo -e "  ${CYAN}• Beacon API:${NC}  ${GREEN}http://localhost:3500${NC}"
+    echo -e "  ${CYAN}• Beacon RPC:${NC}  ${GREEN}http://localhost:3500${NC}"
     
     echo -e "\n${YELLOW}═══[ RPC & AZTEC ON SEPARATE VPS ]═══${NC}"
     echo -e "${WHITE}Use these URLs in your Aztec configuration:${NC}"
     echo -e "  ${CYAN}• Sepolia RPC:${NC} ${GREEN}http://$VPS_IP:8545${NC}"
-    echo -e "  ${CYAN}• Beacon API:${NC}  ${GREEN}http://$VPS_IP:3500${NC}"
+    echo -e "  ${CYAN}• Beacon RPC:${NC}  ${GREEN}http://$VPS_IP:3500${NC}"
     
     echo -e "\n${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     
