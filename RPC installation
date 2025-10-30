@@ -260,7 +260,7 @@ echo -e " ${GREEN}✓${NC}"
     echo -e "  ${WHITE}• WebSocket:${NC} ${YELLOW}ws://$VPS_IP:$WS_PORT${NC}"
     echo -e "  ${WHITE}• Beacon API:${NC} ${YELLOW}http://$VPS_IP:$BEACON_PORT${NC}"
     echo ""
-    echo -e "${YELLOW}⏳ Sync time: 24-30 hours${NC}"
+    echo -e "${YELLOW}⏳ Sync time: 6-8 hours depending on your vps specs${NC}"
     echo -e "\n${CYAN}Use option 2 to check sync progress${NC}"
     read -p "Press Enter to continue..."
 }
