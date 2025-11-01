@@ -2,7 +2,7 @@
 
 # ═══════════════════════════════════════════════════════════════════════
 # SEPOLIA RPC MANAGER - Fast Setup with Geth & Prysm
-# Version: 2.0
+# Version: 69
 # Description: Complete RPC node management (Debian/Ubuntu compatible)
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -533,9 +533,9 @@ main_menu() {
         STORAGE_FREE=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
         
         echo -e "${CYAN}╔══════════════════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║          🌐 SEPOLIA RPC NODE MANAGER                  ║${NC}"
+        echo -e "${CYAN}║          🌐  RPC NODE MANAGER                  ║${NC}"
         echo -e "${CYAN}╚══════════════════════════════════════════════════════╝${NC}"
-        echo -e "${WHITE}    Fast Ethereum Sepolia RPC with Geth & Prysm${NC}"
+        echo -e "${WHITE}     Ethereum Sepolia RPC with Geth & Prysm${NC}"
         echo -e "${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
         
         # Display requirements vs current specs
