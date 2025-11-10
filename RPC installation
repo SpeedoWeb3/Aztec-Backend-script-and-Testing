@@ -6,7 +6,7 @@
 # Description: Complete RPC node management (Debian/Ubuntu compatible)
 # ═══════════════════════════════════════════════════════════════════════
 
-# Color definitions (same as Aztec script)
+# Color definitions
 CYAN='\033[0;36m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -24,9 +24,6 @@ RPC_DIR="/root/ethereum"
 GETH_PORT=8545
 WS_PORT=8546
 BEACON_PORT=3500
-
-# Remove or comment out the trap handlers that might be causing issues
-# trap cleanup INT
 
 # Helper Functions
 install_docker() {
@@ -49,13 +46,13 @@ install_docker() {
         
         # Add Docker's official GPG key
         . /etc/os-release
-        repo_url="https://download.docker.com/linux/$ID"
-        curl -fsSL "$repo_url/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        repo_url="https://download.docker.com/linux/${ID}"
+        curl -fsSL "${repo_url}/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
         sudo chmod a+r /etc/apt/keyrings/docker.gpg
         
         # Set up the repository
         echo \
-          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] $repo_url $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] ${repo_url} $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
           sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
         
         # Install Docker
@@ -115,8 +112,7 @@ install_rpc() {
     # Check if already installed
     if [ -d "$RPC_DIR" ] && [ -f "$RPC_DIR/docker-compose.yml" ]; then
         echo -e "${YELLOW}⚠️  RPC already installed at $RPC_DIR${NC}"
-        echo -e "${CYAN}Do you want to reinstall? (y/N):${NC}"
-        read -p "" reinstall
+        read -p "Do you want to reinstall? (y/N): " reinstall
         if [[ ! "$reinstall" =~ ^[Yy]$ ]]; then
             echo -e "${YELLOW}Installation cancelled${NC}"
             read -p "Press Enter to continue..."
@@ -125,103 +121,98 @@ install_rpc() {
         
         # Stop existing containers
         echo -ne "${CYAN}Stopping existing containers...${NC}"
-        cd $RPC_DIR
-        docker-compose down 2>/dev/null
-        docker compose down 2>/dev/null
-        cd ~
+        cd "$RPC_DIR" || return
+        sudo docker compose down 2>/dev/null || sudo docker-compose down 2>/dev/null
+        cd ~ || return
         echo -e " ${GREEN}✓${NC}"
     fi
     
     # Install dependencies
     echo -ne "${CYAN}Installing dependencies...${NC}"
     sudo apt update >/dev/null 2>&1
-    sudo apt install -y wget lz4 aria2 docker-compose-plugin docker-compose >/dev/null 2>&1
+    sudo apt install -y wget lz4 aria2 docker-compose-plugin openssl >/dev/null 2>&1
     echo -e " ${GREEN}✓${NC}"
     
     # Create directories
     echo -ne "${CYAN}Creating directories...${NC}"
-    mkdir -p /root/ethereum/execution
-    mkdir -p /root/ethereum/consensus
-    cd $RPC_DIR
+    sudo mkdir -p /root/ethereum/execution
+    sudo mkdir -p /root/ethereum/consensus
     echo -e " ${GREEN}✓${NC}"
     
     # Generate JWT secret
     echo -ne "${CYAN}Generating JWT secret...${NC}"
-    openssl rand -hex 32 > /root/ethereum/jwt.hex
+    openssl rand -hex 32 | sudo tee /root/ethereum/jwt.hex > /dev/null
     echo -e " ${GREEN}✓${NC}"
+    
+    # Navigate to directory
+    cd "$RPC_DIR" || { echo -e "${RED}Failed to access directory${NC}"; return; }
     
     # Create docker-compose.yml
     echo -ne "${CYAN}Creating Docker configuration...${NC}"
-    cat > docker-compose.yml << 'EOF'
+    sudo tee docker-compose.yml > /dev/null << 'EOF'
 services:
-    geth:
-        image: ethereum/client-go:v1.16.4
-        container_name: geth
-        network_mode: host
-        restart: unless-stopped
-        volumes:
-            - /root/ethereum/execution:/data
-            - /root/ethereum/jwt.hex:/data/jwt.hex
-        command:
-            - --sepolia
-            - --http
-            - --http.api=eth,net,web3
-            - --http.addr=0.0.0.0
-            - --authrpc.addr=0.0.0.0
-            - --authrpc.vhosts=*
-            - --authrpc.jwtsecret=/data/jwt.hex
-            - --authrpc.port=8551
-            - --syncmode=snap
-            - --datadir=/data
-        logging:
-            driver: "json-file"
-            options:
-                max-size: "10m"
-                max-file: "3"
+  geth:
+    image: ethereum/client-go:v1.16.4
+    container_name: geth
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /root/ethereum/execution:/data
+      - /root/ethereum/jwt.hex:/data/jwt.hex
+    command:
+      - --sepolia
+      - --http
+      - --http.api=eth,net,web3
+      - --http.addr=0.0.0.0
+      - --authrpc.addr=0.0.0.0
+      - --authrpc.vhosts=*
+      - --authrpc.jwtsecret=/data/jwt.hex
+      - --authrpc.port=8551
+      - --syncmode=snap
+      - --datadir=/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-    prysm:
-        image: gcr.io/prysmaticlabs/prysm/beacon-chain:v6.1.2
-        container_name: prysm
-        network_mode: host
-        restart: unless-stopped
-        volumes:
-            - /root/ethereum/consensus:/data
-            - /root/ethereum/jwt.hex:/data/jwt.hex
-        depends_on:
-            - geth
-        command:
-            - --sepolia
-            - --accept-terms-of-use
-            - --datadir=/data
-            - --disable-monitoring
-            - --rpc-host=0.0.0.0
-            - --execution-endpoint=http://127.0.0.1:8551
-            - --jwt-secret=/data/jwt.hex
-            - --rpc-port=4000
-            - --grpc-gateway-corsdomain=*
-            - --grpc-gateway-host=0.0.0.0
-            - --grpc-gateway-port=3500
-            - --min-sync-peers=3
-            - --checkpoint-sync-url=https://checkpoint-sync.sepolia.ethpandaops.io
-            - --genesis-beacon-api-url=https://checkpoint-sync.sepolia.ethpandaops.io
-            - --subscribe-all-data-subnets
-        logging:
-            driver: "json-file"
-            options:
-                max-size: "10m"
-                max-file: "3"
+  prysm:
+    image: gcr.io/prysmaticlabs/prysm/beacon-chain:v6.1.2
+    container_name: prysm
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - /root/ethereum/consensus:/data
+      - /root/ethereum/jwt.hex:/data/jwt.hex
+    depends_on:
+      - geth
+    command:
+      - --sepolia
+      - --accept-terms-of-use
+      - --datadir=/data
+      - --disable-monitoring
+      - --rpc-host=0.0.0.0
+      - --execution-endpoint=http://127.0.0.1:8551
+      - --jwt-secret=/data/jwt.hex
+      - --rpc-port=4000
+      - --grpc-gateway-corsdomain=*
+      - --grpc-gateway-host=0.0.0.0
+      - --grpc-gateway-port=3500
+      - --min-sync-peers=3
+      - --checkpoint-sync-url=https://checkpoint-sync.sepolia.ethpandaops.io
+      - --genesis-beacon-api-url=https://checkpoint-sync.sepolia.ethpandaops.io
+      - --subscribe-all-data-subnets
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 EOF
     echo -e " ${GREEN}✓${NC}"
     
     # Start services
     echo -ne "${CYAN}Starting RPC services...${NC}"
-    if command -v docker compose &> /dev/null; then
-        docker compose up -d >/dev/null 2>&1
-    else
-        docker-compose up -d >/dev/null 2>&1
-    fi
-    
-    if [ $? -eq 0 ]; then
+    if sudo docker compose up -d >/dev/null 2>&1; then
         echo -e " ${GREEN}✓${NC}"
     else
         echo -e " ${RED}✗${NC}"
@@ -231,21 +222,20 @@ EOF
     fi
     
     # Configure firewall
-echo -ne "${CYAN}Configuring firewall...${NC}"
-sudo ufw allow 22/tcp >/dev/null 2>&1              # SSH (prevent lockout)
-sudo ufw allow $GETH_PORT/tcp >/dev/null 2>&1
-sudo ufw allow $WS_PORT/tcp >/dev/null 2>&1
-sudo ufw allow $BEACON_PORT/tcp >/dev/null 2>&1
-sudo ufw allow 30303/tcp >/dev/null 2>&1
-sudo ufw allow 30303/udp >/dev/null 2>&1
-sudo ufw allow 4000/tcp >/dev/null 2>&1
-
-# Check if UFW is enabled, if not enable it
-if sudo ufw status 2>/dev/null | grep -q "Status: inactive"; then
-    sudo ufw --force enable >/dev/null 2>&1
-fi
-
-echo -e " ${GREEN}✓${NC}"
+    echo -ne "${CYAN}Configuring firewall...${NC}"
+    sudo ufw allow 22/tcp >/dev/null 2>&1
+    sudo ufw allow "${GETH_PORT}"/tcp >/dev/null 2>&1
+    sudo ufw allow "${WS_PORT}"/tcp >/dev/null 2>&1
+    sudo ufw allow "${BEACON_PORT}"/tcp >/dev/null 2>&1
+    sudo ufw allow 30303/tcp >/dev/null 2>&1
+    sudo ufw allow 30303/udp >/dev/null 2>&1
+    sudo ufw allow 4000/tcp >/dev/null 2>&1
+    
+    # Enable UFW if inactive
+    if sudo ufw status 2>/dev/null | grep -q "Status: inactive"; then
+        echo "y" | sudo ufw enable >/dev/null 2>&1
+    fi
+    echo -e " ${GREEN}✓${NC}"
     
     # Get IP
     VPS_IP=$(get_public_ip)
@@ -256,11 +246,11 @@ echo -e " ${GREEN}✓${NC}"
     echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${CYAN}📊 RPC Endpoints:${NC}"
-    echo -e "  ${WHITE}• HTTP RPC:${NC} ${YELLOW}http://$VPS_IP:$GETH_PORT${NC}"
-    echo -e "  ${WHITE}• WebSocket:${NC} ${YELLOW}ws://$VPS_IP:$WS_PORT${NC}"
-    echo -e "  ${WHITE}• Beacon API:${NC} ${YELLOW}http://$VPS_IP:$BEACON_PORT${NC}"
+    echo -e "  ${WHITE}• HTTP RPC:${NC} ${YELLOW}http://${VPS_IP}:${GETH_PORT}${NC}"
+    echo -e "  ${WHITE}• WebSocket:${NC} ${YELLOW}ws://${VPS_IP}:${WS_PORT}${NC}"
+    echo -e "  ${WHITE}• Beacon API:${NC} ${YELLOW}http://${VPS_IP}:${BEACON_PORT}${NC}"
     echo ""
-    echo -e "${YELLOW}⏳ Sync time: 6-8 hours depending on your vps specs${NC}"
+    echo -e "${YELLOW}⏳ Sync time: 6-8 hours depending on your VPS specs${NC}"
     echo -e "\n${CYAN}Use option 2 to check sync progress${NC}"
     read -p "Press Enter to continue..."
 }
@@ -279,17 +269,13 @@ check_sync() {
         return
     fi
     
-    cd $RPC_DIR
+    cd "$RPC_DIR" || return
     
     # Check if containers are running
-    if ! docker ps | grep -q "geth"; then
+    if ! sudo docker ps | grep -q "geth"; then
         echo -e "${RED}❌ Geth container is not running${NC}"
         echo -e "${YELLOW}Starting containers...${NC}"
-        if command -v docker compose &> /dev/null; then
-            docker compose up -d
-        else
-            docker-compose up -d
-        fi
+        sudo docker compose up -d 2>/dev/null || sudo docker-compose up -d 2>/dev/null
         sleep 5
     fi
     
@@ -299,7 +285,7 @@ check_sync() {
     echo -e "${WHITE}═══[ GETH STATUS ]═══${NC}"
     GETH_SYNC=$(curl -s -X POST -H "Content-Type: application/json" \
         --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' \
-        http://localhost:$GETH_PORT 2>/dev/null)
+        http://localhost:"${GETH_PORT}" 2>/dev/null)
     
     if [ -z "$GETH_SYNC" ]; then
         echo -e "${RED}❌ Cannot connect to Geth RPC${NC}"
@@ -309,11 +295,11 @@ check_sync() {
         # Get current block
         BLOCK=$(curl -s -X POST -H "Content-Type: application/json" \
             --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-            http://localhost:$GETH_PORT | grep -Po '"result":"\K[^"]*')
+            http://localhost:"${GETH_PORT}" | grep -Po '"result":"\K[^"]*')
         
-        if [ ! -z "$BLOCK" ]; then
+        if [ -n "$BLOCK" ]; then
             BLOCK_DEC=$((16#${BLOCK#0x}))
-            echo -e "  ${WHITE}Current block:${NC} ${GREEN}$BLOCK_DEC${NC}"
+            echo -e "  ${WHITE}Current block:${NC} ${GREEN}${BLOCK_DEC}${NC}"
         fi
     else
         echo -e "${YELLOW}⏳ Geth is syncing...${NC}"
@@ -321,19 +307,19 @@ check_sync() {
         CURRENT=$(echo "$GETH_SYNC" | grep -Po '"currentBlock":"\K[^"]*')
         HIGHEST=$(echo "$GETH_SYNC" | grep -Po '"highestBlock":"\K[^"]*')
         
-        if [ ! -z "$CURRENT" ] && [ ! -z "$HIGHEST" ]; then
+        if [ -n "$CURRENT" ] && [ -n "$HIGHEST" ]; then
             CURRENT_DEC=$((16#${CURRENT#0x}))
             HIGHEST_DEC=$((16#${HIGHEST#0x}))
             
-            if [ $HIGHEST_DEC -gt 0 ]; then
-                PROGRESS=$(awk "BEGIN {printf \"%.2f\", ($CURRENT_DEC/$HIGHEST_DEC)*100}")
+            if [ "$HIGHEST_DEC" -gt 0 ]; then
+                PROGRESS=$(awk "BEGIN {printf \"%.2f\", (${CURRENT_DEC}/${HIGHEST_DEC})*100}")
                 echo -e "  ${WHITE}Progress:${NC} ${YELLOW}${PROGRESS}%${NC}"
-                echo -e "  ${WHITE}Current Block:${NC} $CURRENT_DEC"
-                echo -e "  ${WHITE}Target Block:${NC} $HIGHEST_DEC"
+                echo -e "  ${WHITE}Current Block:${NC} ${CURRENT_DEC}"
+                echo -e "  ${WHITE}Target Block:${NC} ${HIGHEST_DEC}"
                 
                 # Get ETA from Geth logs
-                ETA=$(docker logs geth --tail 20 2>&1 | grep -oP 'eta=\K[^ ]+' | tail -1)
-                if [ ! -z "$ETA" ]; then
+                ETA=$(sudo docker logs geth --tail 20 2>&1 | grep -oP 'eta=\K[^ ]+' | tail -1)
+                if [ -n "$ETA" ]; then
                     echo -e "  ${WHITE}Estimated time:${NC} ${YELLOW}${ETA}${NC}"
                 fi
             fi
@@ -342,7 +328,7 @@ check_sync() {
     
     # Check Prysm sync
     echo -e "\n${WHITE}═══[ PRYSM BEACON STATUS ]═══${NC}"
-    BEACON_SYNC=$(curl -s http://localhost:$BEACON_PORT/eth/v1/node/syncing 2>/dev/null)
+    BEACON_SYNC=$(curl -s http://localhost:"${BEACON_PORT}"/eth/v1/node/syncing 2>/dev/null)
     
     if [ -z "$BEACON_SYNC" ]; then
         echo -e "${RED}❌ Cannot connect to Prysm Beacon${NC}"
@@ -351,8 +337,8 @@ check_sync() {
     else
         echo -e "${YELLOW}⏳ Beacon is syncing...${NC}"
         SYNC_DISTANCE=$(echo "$BEACON_SYNC" | grep -Po '"sync_distance":"\K[^"]*')
-        if [ ! -z "$SYNC_DISTANCE" ]; then
-            echo -e "  ${WHITE}Slots behind:${NC} ${YELLOW}$SYNC_DISTANCE${NC}"
+        if [ -n "$SYNC_DISTANCE" ]; then
+            echo -e "  ${WHITE}Slots behind:${NC} ${YELLOW}${SYNC_DISTANCE}${NC}"
         fi
     fi
     
@@ -377,7 +363,7 @@ check_sync() {
         echo -e "${YELLOW}⏳ RPC is still syncing. Please wait...${NC}"
     fi
     
-    read -p "$(echo -e ${WHITE}Press Enter to continue...${NC})"
+    read -p "Press Enter to continue..."
 }
 
 view_rpc() {
@@ -402,12 +388,12 @@ view_rpc() {
     
     echo -e "\n${YELLOW}═══[ RPC & AZTEC ON SEPARATE VPS ]═══${NC}"
     echo -e "${WHITE}Use these URLs in your Aztec configuration:${NC}"
-    echo -e "  ${CYAN}• Sepolia RPC:${NC} ${GREEN}http://$VPS_IP:8545${NC}"
-    echo -e "  ${CYAN}• Beacon RPC:${NC}  ${GREEN}http://$VPS_IP:3500${NC}"
+    echo -e "  ${CYAN}• Sepolia RPC:${NC} ${GREEN}http://${VPS_IP}:8545${NC}"
+    echo -e "  ${CYAN}• Beacon RPC:${NC}  ${GREEN}http://${VPS_IP}:3500${NC}"
     
     echo -e "\n${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     
-    cd $RPC_DIR
+    cd "$RPC_DIR" || return
     
     echo -e "\n${CYAN}View logs?${NC}"
     echo -e "  ${WHITE}1)${NC} Geth logs"
@@ -415,30 +401,20 @@ view_rpc() {
     echo -e "  ${WHITE}3)${NC} Both logs"
     echo -e "  ${WHITE}4)${NC} Back to menu"
     
-    read -p "$(echo -e ${CYAN}Choose option [1-4]: ${NC})" log_choice
+    read -p "Choose option [1-4]: " log_choice
     
-    case $log_choice in
+    case "$log_choice" in
         1)
-            echo -e "\n${CYAN}Showing Geth logs (Press Ctrl+C to go back)...${NC}\n"
-            trap 'echo -e "\n${YELLOW}Stopped viewing logs${NC}"; return' INT
-            docker logs geth --tail 100 -f 2>&1
-            trap - INT
+            echo -e "\n${CYAN}Showing Geth logs (Press Ctrl+C to exit)...${NC}\n"
+            sudo docker logs geth --tail 100 -f 2>&1 || true
             ;;
         2)
-            echo -e "\n${CYAN}Showing Prysm logs (Press Ctrl+C to go back)...${NC}\n"
-            trap 'echo -e "\n${YELLOW}Stopped viewing logs${NC}"; return' INT
-            docker logs prysm --tail 100 -f 2>&1
-            trap - INT
+            echo -e "\n${CYAN}Showing Prysm logs (Press Ctrl+C to exit)...${NC}\n"
+            sudo docker logs prysm --tail 100 -f 2>&1 || true
             ;;
         3)
-            echo -e "\n${CYAN}Showing all logs (Press Ctrl+C to go back)...${NC}\n"
-            trap 'echo -e "\n${YELLOW}Stopped viewing logs${NC}"; return' INT
-            if command -v docker compose &> /dev/null; then
-                docker compose logs --tail 100 -f 2>&1
-            else
-                docker-compose logs --tail 100 -f 2>&1
-            fi
-            trap - INT
+            echo -e "\n${CYAN}Showing all logs (Press Ctrl+C to exit)...${NC}\n"
+            sudo docker compose logs --tail 100 -f 2>&1 || sudo docker-compose logs --tail 100 -f 2>&1 || true
             ;;
         4)
             return
@@ -470,47 +446,43 @@ delete_rpc() {
     echo -e "  ${WHITE}• Directory: /root/ethereum${NC}"
     echo ""
     echo -e "${RED}⚠️  This action cannot be undone${NC}"
-    read -p "$(echo -e ${RED}Are you sure? [y/N]: ${NC})" confirm
+    read -p "Are you sure? [y/N]: " confirm
     
     if [[ "$confirm" =~ ^[Yy]$ ]]; then
         echo ""
-        cd $RPC_DIR
+        cd "$RPC_DIR" || return
         
         # Stop containers
         echo -ne "${CYAN}Stopping containers...${NC}"
-        if command -v docker compose &> /dev/null; then
-            docker compose down 2>/dev/null
-        else
-            docker-compose down 2>/dev/null
-        fi
-        docker stop geth prysm 2>/dev/null
+        sudo docker compose down 2>/dev/null || sudo docker-compose down 2>/dev/null
+        sudo docker stop geth prysm 2>/dev/null || true
         echo -e " ${GREEN}✓${NC}"
         
         # Remove containers
         echo -ne "${CYAN}Removing containers...${NC}"
-        docker rm geth prysm 2>/dev/null
+        sudo docker rm geth prysm 2>/dev/null || true
         echo -e " ${GREEN}✓${NC}"
         
         # Remove images
         echo -ne "${CYAN}Removing Docker images...${NC}"
-        docker rmi ethereum/client-go:v1.16.4 2>/dev/null
-        docker rmi gcr.io/prysmaticlabs/prysm/beacon-chain:v6.1.2 2>/dev/null
+        sudo docker rmi ethereum/client-go:v1.16.4 2>/dev/null || true
+        sudo docker rmi gcr.io/prysmaticlabs/prysm/beacon-chain:v6.1.2 2>/dev/null || true
         echo -e " ${GREEN}✓${NC}"
         
         # Remove data
         echo -ne "${CYAN}Removing RPC data...${NC}"
-        cd ~
-        rm -rf /root/ethereum
+        cd ~ || return
+        sudo rm -rf /root/ethereum
         echo -e " ${GREEN}✓${NC}"
         
         # Remove firewall rules
         echo -ne "${CYAN}Cleaning firewall rules...${NC}"
-        sudo ufw delete allow 8545/tcp 2>/dev/null
-        sudo ufw delete allow 8546/tcp 2>/dev/null
-        sudo ufw delete allow 3500/tcp 2>/dev/null
-        sudo ufw delete allow 4000/tcp 2>/dev/null
-        sudo ufw delete allow 30303/tcp 2>/dev/null
-        sudo ufw delete allow 30303/udp 2>/dev/null
+        sudo ufw delete allow 8545/tcp 2>/dev/null || true
+        sudo ufw delete allow 8546/tcp 2>/dev/null || true
+        sudo ufw delete allow 3500/tcp 2>/dev/null || true
+        sudo ufw delete allow 4000/tcp 2>/dev/null || true
+        sudo ufw delete allow 30303/tcp 2>/dev/null || true
+        sudo ufw delete allow 30303/udp 2>/dev/null || true
         echo -e " ${GREEN}✓${NC}"
         
         echo -e "\n${GREEN}✅ RPC Node completely deleted${NC}"
@@ -518,10 +490,10 @@ delete_rpc() {
         echo -e "\n${CYAN}❌ Deletion cancelled${NC}"
     fi
     
-    read -p "$(echo -e ${WHITE}Press Enter to continue...${NC})"
+    read -p "Press Enter to continue..."
 }
 
-# Main menu - FIXED EXIT OPTION
+# Main menu
 main_menu() {
     while true; do
         clear
@@ -533,7 +505,7 @@ main_menu() {
         STORAGE_FREE=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
         
         echo -e "${CYAN}╔══════════════════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║          🌐  RPC NODE MANAGER                  ║${NC}"
+        echo -e "${CYAN}║          🌐  RPC NODE MANAGER                        ║${NC}"
         echo -e "${CYAN}╚══════════════════════════════════════════════════════╝${NC}"
         echo -e "${WHITE}     Ethereum Sepolia RPC with Geth & Prysm${NC}"
         echo -e "${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
@@ -544,37 +516,37 @@ main_menu() {
         
         # RAM Check
         if [ "$RAM_GB" -ge 16 ]; then
-            echo -e "│ RAM:     ${WHITE}Required: 16GB${NC}  │  ${GREEN}You: ${RAM_GB}GB ✓${NC}"
+            echo -e "│ RAM:     ${WHITE}Required: 16GB${NC}  │  ${GREEN}You: ${RAM_GB}GB ✓${NC}     │"
         else
-            echo -e "│ RAM:     ${WHITE}Required: 16GB${NC}  │  ${RED}You: ${RAM_GB}GB ✗${NC}"
+            echo -e "│ RAM:     ${WHITE}Required: 16GB${NC}  │  ${RED}You: ${RAM_GB}GB ✗${NC}     │"
         fi
         
         # Cores Check
         if [ "$CORES" -ge 4 ]; then
-            echo -e "│ Cores:   ${WHITE}Required: 4${NC}     │  ${GREEN}You: ${CORES} ✓${NC}"
+            echo -e "│ Cores:   ${WHITE}Required: 4${NC}     │  ${GREEN}You: ${CORES} ✓${NC}        │"
         else
-            echo -e "│ Cores:   ${WHITE}Required: 4${NC}     │  ${RED}You: ${CORES} ✗${NC}"
+            echo -e "│ Cores:   ${WHITE}Required: 4${NC}     │  ${RED}You: ${CORES} ✗${NC}        │"
         fi
         
         # Storage Check
         if [ "$STORAGE_GB" -ge 1000 ]; then
-            echo -e "│ Storage: ${WHITE}Required: 1TB${NC}   │  ${GREEN}You: ${STORAGE_GB}GB ✓${NC}"
+            echo -e "│ Storage: ${WHITE}Required: 1TB${NC}   │  ${GREEN}You: ${STORAGE_GB}GB ✓${NC}  │"
         else
-            echo -e "│ Storage: ${WHITE}Required: 1TB${NC}   │  ${YELLOW}You: ${STORAGE_GB}GB ⚠${NC}"
+            echo -e "│ Storage: ${WHITE}Required: 1TB${NC}   │  ${YELLOW}You: ${STORAGE_GB}GB ⚠${NC}  │"
         fi
         
-        echo -e "│ Free:    ${WHITE}Available${NC}       │  ${CYAN}${STORAGE_FREE}GB${NC}"
+        echo -e "│ Free:    ${WHITE}Available${NC}       │  ${CYAN}${STORAGE_FREE}GB${NC}          │"
         echo -e "└─────────────────────────────────────────────┘"
         
         # Quick status
         echo -e "\n${WHITE}RPC Status:${NC}"
-        if [ -d "$RPC_DIR" ] && docker ps | grep -q "geth" 2>/dev/null; then
+        if [ -d "$RPC_DIR" ] && sudo docker ps 2>/dev/null | grep -q "geth"; then
             echo -e "${GREEN}● Installed and Running${NC}"
         elif [ -d "$RPC_DIR" ]; then
             echo -e "${YELLOW}● Installed but Stopped${NC}"
         else
             echo -e "${RED}● Not Installed${NC}"
-        fi
+         fi
         
         echo -e "\n${PURPLE}═══════════════[ ${WHITE}MENU OPTIONS${NC} ${PURPLE}]═══════════════${NC}\n"
         echo -e "  ${CYAN}[${WHITE}1${CYAN}]${NC} ${WHITE}🚀 Install RPC (Geth & Prysm)${NC}"
@@ -584,9 +556,9 @@ main_menu() {
         echo -e "  ${CYAN}[${WHITE}5${CYAN}]${NC} ${WHITE}🚪 Exit${NC}"
         
         echo -e "\n${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-        read -p "$(echo -e ${CYAN}Select option [1-5]: ${NC})" choice
+        read -p "Select option [1-5]: " choice
         
-        case $choice in
+        case "$choice" in
             1)
                 install_rpc
                 ;;
@@ -600,9 +572,9 @@ main_menu() {
                 delete_rpc
                 ;;
             5)
-                echo -e "\n${CYAN}Thanks for using RPC Manager${NC}"
+                echo -e "\n${CYAN}Thanks for using RPC Manager!${NC}"
                 echo -e "${WHITE}Goodbye 👋${NC}\n"
-                break  # Exit the loop gracefully
+                exit 0
                 ;;
             *)
                 echo -e "${RED}Invalid option. Please choose between 1-5.${NC}"
@@ -617,5 +589,3 @@ check_docker
 
 # Start main menu
 main_menu
-
-# Script ends here naturally
