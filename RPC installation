@@ -2,7 +2,7 @@
 
 # ═══════════════════════════════════════════════════════════════════════
 # SEPOLIA RPC MANAGER - Fast Setup with Geth & Prysm
-# Version: 69
+# Version: 2.0
 # Description: Complete RPC node management (Debian/Ubuntu compatible)
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -24,40 +24,119 @@ RPC_DIR="/root/ethereum"
 GETH_PORT=8545
 WS_PORT=8546
 BEACON_PORT=3500
+LOG_FILE="/var/log/rpc-manager.log"
 
-# Helper Functions
+# ═══════════════════════════════════════════════════════════════════════
+# ERROR HANDLING & LOGGING SYSTEM
+# ═══════════════════════════════════════════════════════════════════════
+
+# Enable error handling
+set -o pipefail
+
+# Logging function
+log() {
+    local level=$1
+    shift
+    local message="$@"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message" | sudo tee -a "$LOG_FILE" >/dev/null 2>&1
+}
+
+# Error handler
+error_exit() {
+    local message="$1"
+    local line="${2:-unknown}"
+    echo -e "\n${RED}╔════════════════════════════════════════════╗${NC}"
+    echo -e "${RED}║           ❌ ERROR OCCURRED                 ║${NC}"
+    echo -e "${RED}╚════════════════════════════════════════════╝${NC}"
+    echo -e "${RED}Error: ${message}${NC}"
+    echo -e "${YELLOW}Line: ${line}${NC}"
+    echo -e "${YELLOW}Check log: ${LOG_FILE}${NC}\n"
+    log "ERROR" "$message (Line: $line)"
+    read -p "Press Enter to return to menu..."
+}
+
+# Trap errors
+trap 'error_exit "Script failed" "$LINENO"' ERR
+
+# Cleanup on exit
+cleanup_on_exit() {
+    log "INFO" "Script exiting normally"
+}
+trap cleanup_on_exit EXIT
+
+# ═══════════════════════════════════════════════════════════════════════
+# DEPENDENCY CHECKS
+# ═══════════════════════════════════════════════════════════════════════
+
+check_dependencies() {
+    local missing_deps=()
+    
+    # Check for required commands
+    command -v curl &>/dev/null || missing_deps+=("curl")
+    command -v wget &>/dev/null || missing_deps+=("wget")
+    command -v awk &>/dev/null || missing_deps+=("awk")
+    command -v grep &>/dev/null || missing_deps+=("grep")
+    
+    if [ ${#missing_deps[@]} -gt 0 ]; then
+        echo -e "${YELLOW}Installing missing dependencies: ${missing_deps[*]}${NC}"
+        sudo apt update >/dev/null 2>&1
+        sudo apt install -y "${missing_deps[@]}" >/dev/null 2>&1 || {
+            error_exit "Failed to install dependencies"
+            return 1
+        }
+    fi
+    return 0
+}
+
+# ═══════════════════════════════════════════════════════════════════════
+# HELPER FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════
+
 install_docker() {
     if ! command -v docker &> /dev/null; then
         echo -e "${YELLOW}Installing Docker...${NC}"
+        log "INFO" "Starting Docker installation"
         
         # Check if Ubuntu or Debian
         if [ ! -f /etc/os-release ]; then
-            echo -e "${RED}Not Ubuntu or Debian${NC}"
-            exit 1
+            error_exit "Not Ubuntu or Debian - unsupported OS"
+            return 1
         fi
         
         # Update system
-        sudo apt update -y && sudo apt upgrade -y
+        sudo apt update -y && sudo apt upgrade -y || {
+            error_exit "Failed to update system"
+            return 1
+        }
         
         # Install prerequisites
         sudo apt-get update
-        sudo apt-get install -y ca-certificates curl gnupg lsb-release
+        sudo apt-get install -y ca-certificates curl gnupg lsb-release || {
+            error_exit "Failed to install prerequisites"
+            return 1
+        }
         sudo install -m 0755 -d /etc/apt/keyrings
         
         # Add Docker's official GPG key
         . /etc/os-release
-        repo_url="https://download.docker.com/linux/${ID}"
-        curl -fsSL "${repo_url}/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        repo_url="https://download.docker.com/linux/$ID"
+        curl -fsSL "$repo_url/gpg" | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg || {
+            error_exit "Failed to add Docker GPG key"
+            return 1
+        }
         sudo chmod a+r /etc/apt/keyrings/docker.gpg
         
         # Set up the repository
         echo \
-          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] ${repo_url} $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+          "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] $repo_url $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
           sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
         
         # Install Docker
         sudo apt update -y
-        sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+        sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || {
+            error_exit "Failed to install Docker"
+            return 1
+        }
         
         # Test Docker installation
         if sudo docker run hello-world >/dev/null 2>&1; then
@@ -66,26 +145,59 @@ install_docker() {
             sudo systemctl enable docker
             sudo systemctl restart docker
             echo -e "${GREEN}✅ Docker Installed Successfully${NC}"
+            log "INFO" "Docker installed successfully"
         else
-            echo -e "${RED}❌ Docker installation failed${NC}"
-            exit 1
+            error_exit "Docker installation test failed"
+            return 1
         fi
     else
         echo -e "${GREEN}✅ Docker is already installed${NC}"
+        log "INFO" "Docker already installed"
     fi
 }
 
 check_docker() {
     if ! command -v docker &> /dev/null; then
-        install_docker
+        install_docker || return 1
     fi
 }
 
 get_public_ip() {
-    curl -s ipv4.icanhazip.com 2>/dev/null || echo "localhost"
+    local ip
+    ip=$(curl -s --max-time 5 ipv4.icanhazip.com 2>/dev/null) || \
+    ip=$(curl -s --max-time 5 ifconfig.me 2>/dev/null) || \
+    ip=$(curl -s --max-time 5 api.ipify.org 2>/dev/null) || \
+    ip="localhost"
+    echo "$ip"
 }
 
-# Main Functions
+# Rollback function
+rollback_installation() {
+    echo -e "\n${YELLOW}Rolling back installation...${NC}"
+    log "WARN" "Rolling back RPC installation"
+    
+    cd /root || return
+    
+    # Stop containers
+    if [ -d "$RPC_DIR" ]; then
+        cd "$RPC_DIR" || return
+        sudo docker compose down 2>/dev/null || sudo docker-compose down 2>/dev/null || true
+    fi
+    
+    # Remove containers
+    sudo docker stop geth prysm 2>/dev/null || true
+    sudo docker rm geth prysm 2>/dev/null || true
+    
+    # Remove directory
+    sudo rm -rf "$RPC_DIR" 2>/dev/null || true
+    
+    echo -e "${GREEN}✅ Rollback complete${NC}"
+    log "INFO" "Rollback completed successfully"
+}
+
+# ═══════════════════════════════════════════════════════════════════════
+# MAIN FUNCTIONS
+# ═══════════════════════════════════════════════════════════════════════
 
 install_rpc() {
     clear
@@ -93,6 +205,11 @@ install_rpc() {
     echo -e "${CYAN}║        🚀 INSTALL SEPOLIA RPC (GETH & PRYSM)         ║${NC}"
     echo -e "${CYAN}╚══════════════════════════════════════════════════════╝${NC}"
     echo ""
+    
+    log "INFO" "Starting RPC installation"
+    
+    # Disable error trap temporarily for requirement checks
+    set +e
     
     # Check minimum requirements
     RAM_GB=$(($(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024))
@@ -105,8 +222,10 @@ install_rpc() {
         echo -e "${WHITE}Required: RAM 8GB+, Cores 2+${NC}"
         read -p "Continue anyway? (y/N): " cont
         if [[ ! "$cont" =~ ^[Yy]$ ]]; then
+            log "INFO" "Installation cancelled - requirements not met"
             return
         fi
+        log "WARN" "User proceeded despite not meeting requirements"
     fi
     
     # Check if already installed
@@ -115,41 +234,67 @@ install_rpc() {
         read -p "Do you want to reinstall? (y/N): " reinstall
         if [[ ! "$reinstall" =~ ^[Yy]$ ]]; then
             echo -e "${YELLOW}Installation cancelled${NC}"
+            log "INFO" "Installation cancelled - already installed"
             read -p "Press Enter to continue..."
             return
         fi
         
         # Stop existing containers
         echo -ne "${CYAN}Stopping existing containers...${NC}"
-        cd "$RPC_DIR" || return
-        sudo docker compose down 2>/dev/null || sudo docker-compose down 2>/dev/null
+        cd "$RPC_DIR" || { error_exit "Cannot access $RPC_DIR"; return 1; }
+        sudo docker compose down 2>/dev/null || sudo docker-compose down 2>/dev/null || true
         cd ~ || return
         echo -e " ${GREEN}✓${NC}"
+        log "INFO" "Stopped existing containers"
     fi
+    
+    # Re-enable error trap
+    set -e
     
     # Install dependencies
     echo -ne "${CYAN}Installing dependencies...${NC}"
-    sudo apt update >/dev/null 2>&1
-    sudo apt install -y wget lz4 aria2 docker-compose-plugin openssl >/dev/null 2>&1
+    if ! sudo apt update >/dev/null 2>&1; then
+        error_exit "Failed to update package list"
+        return 1
+    fi
+    
+    if ! sudo apt install -y wget lz4 aria2 openssl docker-compose-plugin >/dev/null 2>&1; then
+        echo -e " ${RED}✗${NC}"
+        error_exit "Failed to install dependencies"
+        rollback_installation
+        return 1
+    fi
     echo -e " ${GREEN}✓${NC}"
+    log "INFO" "Dependencies installed"
     
     # Create directories
     echo -ne "${CYAN}Creating directories...${NC}"
-    sudo mkdir -p /root/ethereum/execution
-    sudo mkdir -p /root/ethereum/consensus
+    if ! sudo mkdir -p /root/ethereum/{execution,consensus}; then
+        echo -e " ${RED}✗${NC}"
+        error_exit "Failed to create directories"
+        rollback_installation
+        return 1
+    fi
     echo -e " ${GREEN}✓${NC}"
+    log "INFO" "Directories created"
     
     # Generate JWT secret
     echo -ne "${CYAN}Generating JWT secret...${NC}"
-    openssl rand -hex 32 | sudo tee /root/ethereum/jwt.hex > /dev/null
+    if ! openssl rand -hex 32 | sudo tee /root/ethereum/jwt.hex > /dev/null; then
+        echo -e " ${RED}✗${NC}"
+        error_exit "Failed to generate JWT secret"
+        rollback_installation
+        return 1
+    fi
     echo -e " ${GREEN}✓${NC}"
+    log "INFO" "JWT secret generated"
     
     # Navigate to directory
-    cd "$RPC_DIR" || { echo -e "${RED}Failed to access directory${NC}"; return; }
+    cd "$RPC_DIR" || { error_exit "Cannot access $RPC_DIR"; rollback_installation; return 1; }
     
     # Create docker-compose.yml
     echo -ne "${CYAN}Creating Docker configuration...${NC}"
-    sudo tee docker-compose.yml > /dev/null << 'EOF'
+    if ! sudo tee docker-compose.yml > /dev/null << 'EOF'
 services:
   geth:
     image: ethereum/client-go:v1.16.4
@@ -208,34 +353,45 @@ services:
         max-size: "10m"
         max-file: "3"
 EOF
+    then
+        echo -e " ${RED}✗${NC}"
+        error_exit "Failed to create docker-compose.yml"
+        rollback_installation
+        return 1
+    fi
     echo -e " ${GREEN}✓${NC}"
+    log "INFO" "Docker configuration created"
     
     # Start services
     echo -ne "${CYAN}Starting RPC services...${NC}"
-    if sudo docker compose up -d >/dev/null 2>&1; then
-        echo -e " ${GREEN}✓${NC}"
-    else
+    if ! sudo docker compose up -d >/dev/null 2>&1; then
         echo -e " ${RED}✗${NC}"
         echo -e "${RED}Failed to start services${NC}"
+        log "ERROR" "Failed to start Docker services"
+        echo -e "${YELLOW}Attempting rollback...${NC}"
+        rollback_installation
         read -p "Press Enter to continue..."
-        return
+        return 1
     fi
+    echo -e " ${GREEN}✓${NC}"
+    log "INFO" "Docker services started successfully"
     
     # Configure firewall
     echo -ne "${CYAN}Configuring firewall...${NC}"
-    sudo ufw allow 22/tcp >/dev/null 2>&1
-    sudo ufw allow "${GETH_PORT}"/tcp >/dev/null 2>&1
-    sudo ufw allow "${WS_PORT}"/tcp >/dev/null 2>&1
-    sudo ufw allow "${BEACON_PORT}"/tcp >/dev/null 2>&1
-    sudo ufw allow 30303/tcp >/dev/null 2>&1
-    sudo ufw allow 30303/udp >/dev/null 2>&1
-    sudo ufw allow 4000/tcp >/dev/null 2>&1
+    sudo ufw allow 22/tcp >/dev/null 2>&1 || true
+    sudo ufw allow $GETH_PORT/tcp >/dev/null 2>&1 || true
+    sudo ufw allow $WS_PORT/tcp >/dev/null 2>&1 || true
+    sudo ufw allow $BEACON_PORT/tcp >/dev/null 2>&1 || true
+    sudo ufw allow 30303/tcp >/dev/null 2>&1 || true
+    sudo ufw allow 30303/udp >/dev/null 2>&1 || true
+    sudo ufw allow 4000/tcp >/dev/null 2>&1 || true
     
     # Enable UFW if inactive
     if sudo ufw status 2>/dev/null | grep -q "Status: inactive"; then
-        echo "y" | sudo ufw enable >/dev/null 2>&1
+        echo "y" | sudo ufw enable >/dev/null 2>&1 || true
     fi
     echo -e " ${GREEN}✓${NC}"
+    log "INFO" "Firewall configured"
     
     # Get IP
     VPS_IP=$(get_public_ip)
@@ -246,12 +402,14 @@ EOF
     echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
     echo ""
     echo -e "${CYAN}📊 RPC Endpoints:${NC}"
-    echo -e "  ${WHITE}• HTTP RPC:${NC} ${YELLOW}http://${VPS_IP}:${GETH_PORT}${NC}"
-    echo -e "  ${WHITE}• WebSocket:${NC} ${YELLOW}ws://${VPS_IP}:${WS_PORT}${NC}"
-    echo -e "  ${WHITE}• Beacon API:${NC} ${YELLOW}http://${VPS_IP}:${BEACON_PORT}${NC}"
+    echo -e "  ${WHITE}• HTTP RPC:${NC} ${YELLOW}http://$VPS_IP:$GETH_PORT${NC}"
+    echo -e "  ${WHITE}• WebSocket:${NC} ${YELLOW}ws://$VPS_IP:$WS_PORT${NC}"
+    echo -e "  ${WHITE}• Beacon API:${NC} ${YELLOW}http://$VPS_IP:$BEACON_PORT${NC}"
     echo ""
     echo -e "${YELLOW}⏳ Sync time: 6-8 hours depending on your VPS specs${NC}"
     echo -e "\n${CYAN}Use option 2 to check sync progress${NC}"
+    echo -e "${CYAN}Logs available at: ${LOG_FILE}${NC}"
+    log "INFO" "RPC installation completed successfully"
     read -p "Press Enter to continue..."
 }
 
@@ -262,9 +420,15 @@ check_sync() {
     echo -e "${CYAN}╚══════════════════════════════════════════════════════╝${NC}"
     echo ""
     
+    log "INFO" "Checking sync status"
+    
+    # Disable error trap for checks
+    set +e
+    
     # Check if RPC is installed
     if [ ! -d "$RPC_DIR" ]; then
         echo -e "${RED}❌ RPC not installed. Please install first (Option 1)${NC}"
+        log "WARN" "Sync check failed - RPC not installed"
         read -p "Press Enter to continue..."
         return
     fi
@@ -275,7 +439,13 @@ check_sync() {
     if ! sudo docker ps | grep -q "geth"; then
         echo -e "${RED}❌ Geth container is not running${NC}"
         echo -e "${YELLOW}Starting containers...${NC}"
-        sudo docker compose up -d 2>/dev/null || sudo docker-compose up -d 2>/dev/null
+        log "WARN" "Geth not running, attempting to start"
+        sudo docker compose up -d 2>/dev/null || sudo docker-compose up -d 2>/dev/null || {
+            echo -e "${RED}Failed to start containers${NC}"
+            log "ERROR" "Failed to start containers"
+            read -p "Press Enter to continue..."
+            return
+        }
         sleep 5
     fi
     
@@ -283,43 +453,46 @@ check_sync() {
     
     # Check Geth sync
     echo -e "${WHITE}═══[ GETH STATUS ]═══${NC}"
-    GETH_SYNC=$(curl -s -X POST -H "Content-Type: application/json" \
+    GETH_SYNC=$(curl -s --max-time 10 -X POST -H "Content-Type: application/json" \
         --data '{"jsonrpc":"2.0","method":"eth_syncing","params":[],"id":1}' \
-        http://localhost:"${GETH_PORT}" 2>/dev/null)
+        http://localhost:$GETH_PORT 2>/dev/null)
     
     if [ -z "$GETH_SYNC" ]; then
         echo -e "${RED}❌ Cannot connect to Geth RPC${NC}"
+        log "ERROR" "Cannot connect to Geth RPC"
     elif echo "$GETH_SYNC" | grep -q '"result":false'; then
         echo -e "${GREEN}✅ Geth is fully synced${NC}"
+        log "INFO" "Geth fully synced"
         
         # Get current block
-        BLOCK=$(curl -s -X POST -H "Content-Type: application/json" \
+        BLOCK=$(curl -s --max-time 5 -X POST -H "Content-Type: application/json" \
             --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
-            http://localhost:"${GETH_PORT}" | grep -Po '"result":"\K[^"]*')
+            http://localhost:$GETH_PORT | grep -Po '"result":"\K[^"]*')
         
-        if [ -n "$BLOCK" ]; then
+        if [ ! -z "$BLOCK" ]; then
             BLOCK_DEC=$((16#${BLOCK#0x}))
-            echo -e "  ${WHITE}Current block:${NC} ${GREEN}${BLOCK_DEC}${NC}"
+            echo -e "  ${WHITE}Current block:${NC} ${GREEN}$BLOCK_DEC${NC}"
         fi
     else
         echo -e "${YELLOW}⏳ Geth is syncing...${NC}"
+        log "INFO" "Geth syncing in progress"
         
         CURRENT=$(echo "$GETH_SYNC" | grep -Po '"currentBlock":"\K[^"]*')
         HIGHEST=$(echo "$GETH_SYNC" | grep -Po '"highestBlock":"\K[^"]*')
         
-        if [ -n "$CURRENT" ] && [ -n "$HIGHEST" ]; then
+        if [ ! -z "$CURRENT" ] && [ ! -z "$HIGHEST" ]; then
             CURRENT_DEC=$((16#${CURRENT#0x}))
             HIGHEST_DEC=$((16#${HIGHEST#0x}))
             
-            if [ "$HIGHEST_DEC" -gt 0 ]; then
-                PROGRESS=$(awk "BEGIN {printf \"%.2f\", (${CURRENT_DEC}/${HIGHEST_DEC})*100}")
+            if [ $HIGHEST_DEC -gt 0 ]; then
+                PROGRESS=$(awk "BEGIN {printf \"%.2f\", ($CURRENT_DEC/$HIGHEST_DEC)*100}")
                 echo -e "  ${WHITE}Progress:${NC} ${YELLOW}${PROGRESS}%${NC}"
-                echo -e "  ${WHITE}Current Block:${NC} ${CURRENT_DEC}"
-                echo -e "  ${WHITE}Target Block:${NC} ${HIGHEST_DEC}"
+                echo -e "  ${WHITE}Current Block:${NC} $CURRENT_DEC"
+                echo -e "  ${WHITE}Target Block:${NC} $HIGHEST_DEC"
                 
                 # Get ETA from Geth logs
                 ETA=$(sudo docker logs geth --tail 20 2>&1 | grep -oP 'eta=\K[^ ]+' | tail -1)
-                if [ -n "$ETA" ]; then
+                if [ ! -z "$ETA" ]; then
                     echo -e "  ${WHITE}Estimated time:${NC} ${YELLOW}${ETA}${NC}"
                 fi
             fi
@@ -328,17 +501,20 @@ check_sync() {
     
     # Check Prysm sync
     echo -e "\n${WHITE}═══[ PRYSM BEACON STATUS ]═══${NC}"
-    BEACON_SYNC=$(curl -s http://localhost:"${BEACON_PORT}"/eth/v1/node/syncing 2>/dev/null)
+    BEACON_SYNC=$(curl -s --max-time 10 http://localhost:$BEACON_PORT/eth/v1/node/syncing 2>/dev/null)
     
     if [ -z "$BEACON_SYNC" ]; then
         echo -e "${RED}❌ Cannot connect to Prysm Beacon${NC}"
+        log "ERROR" "Cannot connect to Prysm Beacon"
     elif echo "$BEACON_SYNC" | grep -q '"is_syncing":false'; then
         echo -e "${GREEN}✅ Beacon is fully synced${NC}"
+        log "INFO" "Beacon fully synced"
     else
         echo -e "${YELLOW}⏳ Beacon is syncing...${NC}"
+        log "INFO" "Beacon syncing in progress"
         SYNC_DISTANCE=$(echo "$BEACON_SYNC" | grep -Po '"sync_distance":"\K[^"]*')
-        if [ -n "$SYNC_DISTANCE" ]; then
-            echo -e "  ${WHITE}Slots behind:${NC} ${YELLOW}${SYNC_DISTANCE}${NC}"
+        if [ ! -z "$SYNC_DISTANCE" ]; then
+            echo -e "  ${WHITE}Slots behind:${NC} ${YELLOW}$SYNC_DISTANCE${NC}"
         fi
     fi
     
@@ -359,9 +535,15 @@ check_sync() {
     if [ "$GETH_SYNCED" = true ] && [ "$BEACON_SYNCED" = true ]; then
         VPS_IP=$(get_public_ip)
         echo -e "${GREEN}✅ RPC is fully synced and ready to use${NC}"
+        echo -e "\n${CYAN}Your RPC URL for Aztec:${NC}"
+        echo -e "${YELLOW}http://$VPS_IP:$GETH_PORT${NC}"
+        log "INFO" "RPC fully synced and ready"
     else
         echo -e "${YELLOW}⏳ RPC is still syncing. Please wait...${NC}"
     fi
+    
+    # Re-enable error trap
+    set -e
     
     read -p "Press Enter to continue..."
 }
@@ -373,68 +555,12 @@ view_rpc() {
     echo -e "${CYAN}╚══════════════════════════════════════════════════════╝${NC}"
     echo ""
     
-    if [ ! -d "$RPC_DIR" ]; then
-        echo -e "${RED}❌ RPC not installed. Please install first (Option 1)${NC}"
-        read -p "Press Enter to continue..."
-        return
-    fi
-    
-    VPS_IP=$(get_public_ip)
-    
-    echo -e "${YELLOW}═══[ RPC & AZTEC ON SAME VPS ]═══${NC}"
-    echo -e "${WHITE}Use these URLs in your Aztec configuration:${NC}"
-    echo -e "  ${CYAN}• Sepolia RPC:${NC} ${GREEN}http://localhost:8545${NC}"
-    echo -e "  ${CYAN}• Beacon RPC:${NC}  ${GREEN}http://localhost:3500${NC}"
-    
-    echo -e "\n${YELLOW}═══[ RPC & AZTEC ON SEPARATE VPS ]═══${NC}"
-    echo -e "${WHITE}Use these URLs in your Aztec configuration:${NC}"
-    echo -e "  ${CYAN}• Sepolia RPC:${NC} ${GREEN}http://${VPS_IP}:8545${NC}"
-    echo -e "  ${CYAN}• Beacon RPC:${NC}  ${GREEN}http://${VPS_IP}:3500${NC}"
-    
-    echo -e "\n${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    
-    cd "$RPC_DIR" || return
-    
-    echo -e "\n${CYAN}View logs?${NC}"
-    echo -e "  ${WHITE}1)${NC} Geth logs"
-    echo -e "  ${WHITE}2)${NC} Prysm logs"
-    echo -e "  ${WHITE}3)${NC} Both logs"
-    echo -e "  ${WHITE}4)${NC} Back to menu"
-    
-    read -p "Choose option [1-4]: " log_choice
-    
-    case "$log_choice" in
-        1)
-            echo -e "\n${CYAN}Showing Geth logs (Press Ctrl+C to exit)...${NC}\n"
-            sudo docker logs geth --tail 100 -f 2>&1 || true
-            ;;
-        2)
-            echo -e "\n${CYAN}Showing Prysm logs (Press Ctrl+C to exit)...${NC}\n"
-            sudo docker logs prysm --tail 100 -f 2>&1 || true
-            ;;
-        3)
-            echo -e "\n${CYAN}Showing all logs (Press Ctrl+C to exit)...${NC}\n"
-            sudo docker compose logs --tail 100 -f 2>&1 || sudo docker-compose logs --tail 100 -f 2>&1 || true
-            ;;
-        4)
-            return
-            ;;
-        *)
-            echo -e "${RED}Invalid option${NC}"
-            sleep 1
-            ;;
-    esac
-}
-
-delete_rpc() {
-    clear
-    echo -e "${RED}╔══════════════════════════════════════════════════════╗${NC}"
-    echo -e "${RED}║            ⚠️  DELETE RPC NODE WARNING ⚠️              ║${NC}"
-    echo -e "${RED}╚══════════════════════════════════════════════════════╝${NC}"
-    echo ""
+    # Disable error trap
+    set +e
     
     if [ ! -d "$RPC_DIR" ]; then
         echo -e "${YELLOW}RPC is not installed${NC}"
+        log "INFO" "Delete attempted but RPC not installed"
         read -p "Press Enter to continue..."
         return
     fi
@@ -450,11 +576,12 @@ delete_rpc() {
     
     if [[ "$confirm" =~ ^[Yy]$ ]]; then
         echo ""
-        cd "$RPC_DIR" || return
+        log "WARN" "User initiated RPC deletion"
+        cd "$RPC_DIR" || cd ~ || return
         
         # Stop containers
         echo -ne "${CYAN}Stopping containers...${NC}"
-        sudo docker compose down 2>/dev/null || sudo docker-compose down 2>/dev/null
+        sudo docker compose down 2>/dev/null || sudo docker-compose down 2>/dev/null || true
         sudo docker stop geth prysm 2>/dev/null || true
         echo -e " ${GREEN}✓${NC}"
         
@@ -472,7 +599,7 @@ delete_rpc() {
         # Remove data
         echo -ne "${CYAN}Removing RPC data...${NC}"
         cd ~ || return
-        sudo rm -rf /root/ethereum
+        sudo rm -rf /root/ethereum 2>/dev/null || true
         echo -e " ${GREEN}✓${NC}"
         
         # Remove firewall rules
@@ -486,9 +613,14 @@ delete_rpc() {
         echo -e " ${GREEN}✓${NC}"
         
         echo -e "\n${GREEN}✅ RPC Node completely deleted${NC}"
+        log "INFO" "RPC Node deleted successfully"
     else
         echo -e "\n${CYAN}❌ Deletion cancelled${NC}"
+        log "INFO" "RPC deletion cancelled by user"
     fi
+    
+    # Re-enable error trap
+    set -e
     
     read -p "Press Enter to continue..."
 }
@@ -498,6 +630,9 @@ main_menu() {
     while true; do
         clear
         
+        # Disable error trap for menu
+        set +e
+        
         # Get system specs
         RAM_GB=$(($(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024 / 1024))
         CORES=$(nproc)
@@ -505,48 +640,28 @@ main_menu() {
         STORAGE_FREE=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//')
         
         echo -e "${CYAN}╔══════════════════════════════════════════════════════╗${NC}"
-        echo -e "${CYAN}║          🌐  RPC NODE MANAGER                        ║${NC}"
+        echo -e "${CYAN}║          🌐 SEPOLIA RPC NODE MANAGER                  ║${NC}"
         echo -e "${CYAN}╚══════════════════════════════════════════════════════╝${NC}"
-        echo -e "${WHITE}     Ethereum Sepolia RPC with Geth & Prysm${NC}"
+        echo -e "${WHITE}    Fast Ethereum Sepolia RPC with Geth & Prysm${NC}"
         echo -e "${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\n"
         
-        # Display requirements vs current specs
-        echo -e "${YELLOW}📋 Requirements vs Your VPS:${NC}"
-        echo -e "┌─────────────────────────────────────────────┐"
-        
-        # RAM Check
-        if [ "$RAM_GB" -ge 16 ]; then
-            echo -e "│ RAM:     ${WHITE}Required: 16GB${NC}  │  ${GREEN}You: ${RAM_GB}GB ✓${NC}     │"
-        else
-            echo -e "│ RAM:     ${WHITE}Required: 16GB${NC}  │  ${RED}You: ${RAM_GB}GB ✗${NC}     │"
-        fi
-        
-        # Cores Check
-        if [ "$CORES" -ge 4 ]; then
-            echo -e "│ Cores:   ${WHITE}Required: 4${NC}     │  ${GREEN}You: ${CORES} ✓${NC}        │"
-        else
-            echo -e "│ Cores:   ${WHITE}Required: 4${NC}     │  ${RED}You: ${CORES} ✗${NC}        │"
-        fi
-        
-        # Storage Check
-        if [ "$STORAGE_GB" -ge 1000 ]; then
-            echo -e "│ Storage: ${WHITE}Required: 1TB${NC}   │  ${GREEN}You: ${STORAGE_GB}GB ✓${NC}  │"
-        else
-            echo -e "│ Storage: ${WHITE}Required: 1TB${NC}   │  ${YELLOW}You: ${STORAGE_GB}GB ⚠${NC}  │"
-        fi
-        
-        echo -e "│ Free:    ${WHITE}Available${NC}       │  ${CYAN}${STORAGE_FREE}GB${NC}          │"
-        echo -e "└─────────────────────────────────────────────┘"
+        # Display requirements
+        echo -e "${YELLOW}📋 System Status:${NC}"
+        echo ""
+        echo -e "  ${WHITE}RAM:${NC}     Required: 16GB   │   ${GREEN}You have: ${RAM_GB}GB${NC}"
+        echo -e "  ${WHITE}Cores:${NC}   Required: 4      │   ${GREEN}You have: ${CORES}${NC}"
+        echo -e "  ${WHITE}Storage:${NC} Required: 1TB    │   ${GREEN}Total: ${STORAGE_GB}GB | Free: ${STORAGE_FREE}GB${NC}"
+        echo ""
         
         # Quick status
-        echo -e "\n${WHITE}RPC Status:${NC}"
+        echo -e "${WHITE}RPC Status:${NC}"
         if [ -d "$RPC_DIR" ] && sudo docker ps 2>/dev/null | grep -q "geth"; then
             echo -e "${GREEN}● Installed and Running${NC}"
         elif [ -d "$RPC_DIR" ]; then
             echo -e "${YELLOW}● Installed but Stopped${NC}"
         else
             echo -e "${RED}● Not Installed${NC}"
-         fi
+        fi
         
         echo -e "\n${PURPLE}═══════════════[ ${WHITE}MENU OPTIONS${NC} ${PURPLE}]═══════════════${NC}\n"
         echo -e "  ${CYAN}[${WHITE}1${CYAN}]${NC} ${WHITE}🚀 Install RPC (Geth & Prysm)${NC}"
@@ -558,7 +673,10 @@ main_menu() {
         echo -e "\n${AMBER}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
         read -p "Select option [1-5]: " choice
         
-        case "$choice" in
+        # Re-enable error trap
+        set -e
+        
+        case $choice in
             1)
                 install_rpc
                 ;;
@@ -574,6 +692,7 @@ main_menu() {
             5)
                 echo -e "\n${CYAN}Thanks for using RPC Manager!${NC}"
                 echo -e "${WHITE}Goodbye 👋${NC}\n"
+                log "INFO" "Script exited by user"
                 exit 0
                 ;;
             *)
@@ -584,8 +703,29 @@ main_menu() {
     done
 }
 
+# ═══════════════════════════════════════════════════════════════════════
+# MAIN EXECUTION
+# ═══════════════════════════════════════════════════════════════════════
+
+# Create log file if doesn't exist
+sudo touch "$LOG_FILE" 2>/dev/null || LOG_FILE="/tmp/rpc-manager.log"
+sudo chmod 666 "$LOG_FILE" 2>/dev/null || true
+
+log "INFO" "==================== Script Started ===================="
+
+# Check dependencies
+check_dependencies || {
+    echo -e "${RED}Failed to check/install dependencies${NC}"
+    exit 1
+}
+
 # Check Docker on startup
-check_docker
+check_docker || {
+    echo -e "${RED}Docker check/installation failed${NC}"
+    exit 1
+}
 
 # Start main menu
 main_menu
+
+# Script ends here naturally
